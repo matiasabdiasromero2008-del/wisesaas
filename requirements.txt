@@ -1,0 +1,13 @@
+bcrypt
+matplotlib
+fpdf2
+pandas
+openpyxl
+fastapi
+uvicorn
+jinja2
+python-multipart
+pydantic
+psycopg2-binary
+gunicorn
+python-jose[cryptography]
