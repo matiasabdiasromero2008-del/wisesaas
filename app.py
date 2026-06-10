@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import List, Optional
@@ -330,38 +330,42 @@ def list_tenants(user: dict = Depends(require_superadmin)):
 
 @app.post("/superadmin/tenants")
 def create_tenant(req: CreateTenantRequest, user: dict = Depends(require_superadmin)):
-    conn = get_connection()
-    cursor = conn.cursor()
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
 
-    slug = req.username.lower().replace(" ", "-")
+        slug = req.username.lower().replace(" ", "-")
 
-    # Verificar slug único
-    cursor.execute("SELECT id FROM tenants WHERE slug = %s", (slug,))
-    if cursor.fetchone():
+        # Verificar slug único
+        cursor.execute("SELECT id FROM tenants WHERE slug = %s", (slug,))
+        if cursor.fetchone():
+            conn.close()
+            raise HTTPException(status_code=400, detail="El usuario ya está en uso")
+
+        # Crear tenant usando el username como nombre de la instancia
+        cursor.execute(
+            "INSERT INTO tenants (name, slug) VALUES (%s, %s) RETURNING id",
+            (req.username, slug)
+        )
+        tenant_id = cursor.fetchone()[0]
+
+        # Sembrar categorías por defecto
+        seed_tenant_categories(tenant_id, cursor)
+
+        # Crear Admin de la instancia con la contraseña manual (sin correo)
+        hashed = bcrypt.hashpw(req.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        cursor.execute(
+            "INSERT INTO users (username, password_hash, role, tenant_id) VALUES (%s, %s, %s, %s)",
+            (req.username, hashed, "Admin", tenant_id)
+        )
+
+        conn.commit()
         conn.close()
-        raise HTTPException(status_code=400, detail="El usuario ya está en uso")
 
-    # Crear tenant usando el username como nombre de la instancia
-    cursor.execute(
-        "INSERT INTO tenants (name, slug) VALUES (%s, %s) RETURNING id",
-        (req.username, slug)
-    )
-    tenant_id = cursor.fetchone()[0]
-
-    # Sembrar categorías por defecto
-    seed_tenant_categories(tenant_id, cursor)
-
-    # Crear Admin de la instancia con la contraseña manual (sin correo)
-    hashed = bcrypt.hashpw(req.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-    cursor.execute(
-        "INSERT INTO users (username, password_hash, role, tenant_id) VALUES (%s, %s, %s, %s)",
-        (req.username, hashed, "Admin", tenant_id)
-    )
-
-    conn.commit()
-    conn.close()
-
-    return {"success": True, "tenant_id": tenant_id, "message": f"Cuenta '{req.username}' creada."}
+        return {"success": True, "tenant_id": tenant_id, "message": f"Cuenta '{req.username}' creada."}
+    except Exception as e:
+        import traceback
+        return JSONResponse(status_code=500, content={"detail": f"Error interno: {str(e)}\n{traceback.format_exc()}"})
 
 
 @app.put("/superadmin/tenants/{tenant_id}")
