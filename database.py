@@ -269,17 +269,22 @@ def init_db():
 
     conn.commit()
 
-    # ─── Crear Super Admin por defecto si no existe ──────────────────────────────
+    # ─── Crear o Actualizar Super Admin por defecto ──────────────────────────────
+    admin_pass = bcrypt.hashpw("MATIAS2008".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
     cursor.execute("SELECT id FROM users WHERE role = 'SuperAdmin' LIMIT 1")
-    if not cursor.fetchone():
-        admin_pass = bcrypt.hashpw("MATIAS2008".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    row = cursor.fetchone()
+    if not row:
         cursor.execute(
             "INSERT INTO users (username, password_hash, role, tenant_id, email) VALUES (%s, %s, %s, NULL, %s)",
             ("superadmin", admin_pass, "SuperAdmin", "wissesaas@gmail.com")
         )
-        conn.commit()
-
+    else:
+        cursor.execute(
+            "UPDATE users SET password_hash = %s WHERE id = %s",
+            (admin_pass, row[0])
+        )
     conn.commit()
+
     conn.close()
 
 
