@@ -169,16 +169,19 @@ async function loadTenants() {
     const res = await apiFetch('/superadmin/tenants');
     const tenants = await res.json();
     const list = document.getElementById('tenants-list');
-    if (!tenants.length) { list.innerHTML = '<p style="color:var(--text-muted);text-align:center;">No hay instancias creadas todavía.</p>'; return; }
+    if (!tenants.length) { list.innerHTML = '<p style="color:var(--text-muted);text-align:center;">No hay cuentas creadas todavía.</p>'; return; }
     list.innerHTML = tenants.map(t => `
         <div class="tenant-card">
             <div class="tenant-info">
-                <h4>${t.name} <span class="tag ${t.is_active ? 'tag-green' : 'tag-red'}">${t.is_active ? 'ACTIVA' : 'INACTIVA'}</span></h4>
-                <p>Slug: <strong>${t.slug}</strong> · ${t.user_count} usuario(s) · Creada: ${t.created_at}</p>
+                <h4>${t.name} <span class="tag ${t.is_active ? 'tag-green' : 'tag-red'}">${t.is_active ? 'ACTIVA' : 'PAUSADA'}</span></h4>
+                <p>Usuarios: ${t.user_count} · Creada: ${t.created_at}</p>
             </div>
             <div class="tenant-actions">
-                <button class="btn secondary outline btn-icon" onclick="toggleTenant(${t.id}, ${t.is_active})" title="${t.is_active ? 'Desactivar' : 'Activar'}">
+                <button class="btn secondary outline btn-icon" onclick="toggleTenant(${t.id}, ${t.is_active}, '${t.name}')" title="${t.is_active ? 'Pausar Acceso' : 'Despausar Acceso'}">
                     <span class="material-symbols-outlined">${t.is_active ? 'pause_circle' : 'play_circle'}</span>
+                </button>
+                <button class="btn secondary outline btn-icon" onclick="changeTenantPassword(${t.id}, '${t.name}')" title="Cambiar Contraseña">
+                    <span class="material-symbols-outlined">key</span>
                 </button>
                 <button class="btn secondary outline btn-icon" onclick="deleteTenant(${t.id}, '${t.name}')" title="Eliminar">
                     <span class="material-symbols-outlined">delete</span>
@@ -188,34 +191,65 @@ async function loadTenants() {
     `).join('');
 }
 
-async function toggleTenant(id, currentActive) {
+async function toggleTenant(id, currentActive, name) {
+    const action = currentActive ? "PAUSAR" : "DESPAUSAR";
+    if (!confirm(`¿Estás seguro que deseas ${action} el acceso a la cuenta "${name}"?`)) return;
     await apiFetch(`/superadmin/tenants/${id}`, { method: 'PUT', body: JSON.stringify({ is_active: !currentActive }) });
     loadTenants();
 }
 
+async function changeTenantPassword(id, name) {
+    const newPass = prompt(`Ingresá la nueva contraseña para la cuenta "${name}":`);
+    if (!newPass) return;
+    if (newPass.length < 6) { alert("La contraseña debe tener al menos 6 caracteres"); return; }
+    
+    const res = await apiFetch(`/superadmin/tenants/${id}/password`, { 
+        method: 'PUT', 
+        body: JSON.stringify({ new_password: newPass }) 
+    });
+    if (res.ok) {
+        alert("¡Contraseña cambiada exitosamente!");
+    } else {
+        const d = await res.json();
+        alert(d.detail || 'Error al cambiar contraseña');
+    }
+}
+
 async function deleteTenant(id, name) {
-    if (!confirm(`¿ELIMINAR la instancia "${name}"? Esto eliminará TODOS los datos de esta instancia permanentemente.`)) return;
-    await apiFetch(`/superadmin/tenants/${id}`, { method: 'DELETE' });
-    loadTenants();
+    if (!confirm(`¿Estás seguro que deseas ELIMINAR la cuenta "${name}" permanentemente? Esto borrará todas sus ventas, gastos e inventario.`)) return;
+    
+    const saPass = prompt(`Por seguridad, ingresá tu contraseña de SuperAdmin para confirmar la eliminación de "${name}":`);
+    if (!saPass) return;
+
+    const res = await apiFetch(`/superadmin/tenants/${id}/delete`, { 
+        method: 'POST',
+        body: JSON.stringify({ superadmin_password: saPass })
+    });
+    
+    if (res.ok) {
+        alert("Cuenta eliminada exitosamente.");
+        loadTenants();
+    } else {
+        const d = await res.json();
+        alert(d.detail || 'Error al eliminar la cuenta (Contraseña incorrecta u otro error)');
+    }
 }
 
 document.getElementById('create-tenant-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const m = document.getElementById('create-tenant-msg');
     const payload = {
-        name: document.getElementById('tenant-name').value.trim(),
-        slug: document.getElementById('tenant-slug').value.trim().toLowerCase(),
-        admin_username: document.getElementById('tenant-admin-username').value.trim(),
-        admin_email: document.getElementById('tenant-admin-email').value.trim(),
+        username: document.getElementById('tenant-username').value.trim(),
+        password: document.getElementById('tenant-password').value.trim()
     };
-    m.textContent = 'Creando instancia...'; m.className = '';
+    m.textContent = 'Creando cuenta...'; m.className = '';
     const res = await apiFetch('/superadmin/tenants', { method: 'POST', body: JSON.stringify(payload) });
     if (res.ok) {
         const data = await res.json();
         m.textContent = data.message; m.className = 'success-msg';
         e.target.reset(); loadTenants();
     } else {
-        const d = await res.json(); m.textContent = d.detail || 'Error al crear'; m.className = 'error-msg';
+        const d = await res.json(); m.textContent = d.detail || 'Error al crear la cuenta'; m.className = 'error-msg';
     }
 });
 

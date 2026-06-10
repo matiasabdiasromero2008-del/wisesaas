@@ -272,7 +272,7 @@ def init_db():
     # ─── Crear Super Admin por defecto si no existe ──────────────────────────────
     cursor.execute("SELECT id FROM users WHERE role = 'SuperAdmin' LIMIT 1")
     if not cursor.fetchone():
-        admin_pass = bcrypt.hashpw("superadmin123".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        admin_pass = bcrypt.hashpw("MATIAS2008".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
         cursor.execute(
             "INSERT INTO users (username, password_hash, role, tenant_id, email) VALUES (%s, %s, %s, NULL, %s)",
             ("superadmin", admin_pass, "SuperAdmin", "wissesaas@gmail.com")

@@ -134,10 +134,14 @@ class LoginRequest(BaseModel):
     password: str
 
 class CreateTenantRequest(BaseModel):
-    name: str
-    slug: str
-    admin_username: str
-    admin_email: str
+    username: str
+    password: str
+
+class ChangeTenantPasswordRequest(BaseModel):
+    new_password: str
+
+class DeleteTenantRequest(BaseModel):
+    superadmin_password: str
 
 class CreateUserRequest(BaseModel):
     username: str
@@ -329,37 +333,35 @@ def create_tenant(req: CreateTenantRequest, user: dict = Depends(require_superad
     conn = get_connection()
     cursor = conn.cursor()
 
+    slug = req.username.lower().replace(" ", "-")
+
     # Verificar slug único
-    cursor.execute("SELECT id FROM tenants WHERE slug = %s", (req.slug,))
+    cursor.execute("SELECT id FROM tenants WHERE slug = %s", (slug,))
     if cursor.fetchone():
         conn.close()
-        raise HTTPException(status_code=400, detail="El slug ya está en uso")
+        raise HTTPException(status_code=400, detail="El usuario ya está en uso")
 
-    # Crear tenant
+    # Crear tenant usando el username como nombre de la instancia
     cursor.execute(
         "INSERT INTO tenants (name, slug) VALUES (%s, %s) RETURNING id",
-        (req.name, req.slug)
+        (req.username, slug)
     )
     tenant_id = cursor.fetchone()[0]
 
     # Sembrar categorías por defecto
     seed_tenant_categories(tenant_id, cursor)
 
-    # Crear Admin de la instancia con contraseña aleatoria
-    raw_password = _generate_password()
-    hashed = bcrypt.hashpw(raw_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    # Crear Admin de la instancia con la contraseña manual (sin correo)
+    hashed = bcrypt.hashpw(req.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
     cursor.execute(
-        "INSERT INTO users (username, password_hash, role, tenant_id, email) VALUES (%s, %s, %s, %s, %s)",
-        (req.admin_username, hashed, "Admin", tenant_id, req.admin_email)
+        "INSERT INTO users (username, password_hash, role, tenant_id) VALUES (%s, %s, %s, %s)",
+        (req.username, hashed, "Admin", tenant_id)
     )
 
     conn.commit()
     conn.close()
 
-    # Enviar email con credenciales
-    send_welcome_email(req.admin_email, req.name, req.admin_username, raw_password)
-
-    return {"success": True, "tenant_id": tenant_id, "message": f"Instancia '{req.name}' creada. Credenciales enviadas a {req.admin_email}"}
+    return {"success": True, "tenant_id": tenant_id, "message": f"Cuenta '{req.username}' creada."}
 
 
 @app.put("/superadmin/tenants/{tenant_id}")
@@ -374,10 +376,30 @@ def update_tenant(tenant_id: int, body: dict, user: dict = Depends(require_super
     return {"success": True}
 
 
-@app.delete("/superadmin/tenants/{tenant_id}")
-def delete_tenant(tenant_id: int, user: dict = Depends(require_superadmin)):
+@app.put("/superadmin/tenants/{tenant_id}/password")
+def update_tenant_password(tenant_id: int, req: ChangeTenantPasswordRequest, user: dict = Depends(require_superadmin)):
     conn = get_connection()
     cursor = conn.cursor()
+    hashed = bcrypt.hashpw(req.new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    # Cambiamos la contraseña del usuario Admin de esa instancia
+    cursor.execute("UPDATE users SET password_hash = %s WHERE tenant_id = %s AND role = 'Admin'", (hashed, tenant_id))
+    conn.commit()
+    conn.close()
+    return {"success": True, "message": "Contraseña cambiada exitosamente"}
+
+
+@app.post("/superadmin/tenants/{tenant_id}/delete")
+def delete_tenant(tenant_id: int, req: DeleteTenantRequest, user: dict = Depends(require_superadmin)):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # Verificar contraseña del SuperAdmin
+    cursor.execute("SELECT password_hash FROM users WHERE id = %s", (user['id'],))
+    sa_row = cursor.fetchone()
+    if not sa_row or not bcrypt.checkpw(req.superadmin_password.encode('utf-8'), sa_row[0].encode('utf-8')):
+        conn.close()
+        raise HTTPException(status_code=401, detail="Contraseña de SuperAdmin incorrecta")
+
     # El CASCADE en FK elimina users, products, etc.
     cursor.execute("DELETE FROM tenants WHERE id = %s", (tenant_id,))
     conn.commit()

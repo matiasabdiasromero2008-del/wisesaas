@@ -128,7 +128,7 @@
                 </svg>
             </div>
             <ul>
-                <li><a class="nav-link sa-active" onclick="showSASection('sa-tenants')"><span class="material-symbols-outlined">apartment</span> INSTANCIAS</a></li>
+                <li><a class="nav-link sa-active" onclick="showSASection('sa-tenants')"><span class="material-symbols-outlined">apartment</span> CUENTAS</a></li>
                 <li><a class="nav-link" onclick="showSASection('sa-users')"><span class="material-symbols-outlined">manage_accounts</span> USUARIOS</a></li>
             </ul>
             <div style="margin-top:auto;padding-top:20px;border-top:1px solid var(--surface-border);">
@@ -144,39 +144,29 @@
         </nav>
         <main class="content">
             <header>
-                <h2 id="sa-view-title">GESTIÓN DE INSTANCIAS</h2>
+                <h2 id="sa-view-title">GESTIÓN DE CUENTAS</h2>
             </header>
 
             <!-- SA: Tenants -->
             <section id="sa-tenants" class="section active">
                 <div class="card" style="margin-bottom:20px;">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-                        <h3 style="margin:0;">NUEVA INSTANCIA</h3>
+                        <h3 style="margin:0;">NUEVA CUENTA CONVENCIONAL</h3>
                     </div>
                     <form id="create-tenant-form">
                         <div class="form-row">
-                            <div class="input-group" style="flex:2;">
-                                <label>NOMBRE DE LA EMPRESA</label>
-                                <input type="text" id="tenant-name" required placeholder="Ej: Mermeladas La Abuela">
+                            <div class="input-group">
+                                <label>USUARIO</label>
+                                <input type="text" id="tenant-username" required placeholder="Ej: MIGUITASBAKERY">
                             </div>
                             <div class="input-group">
-                                <label>SLUG (ID ÚNICO)</label>
-                                <input type="text" id="tenant-slug" required placeholder="Ej: mermeladas-abuela" pattern="[a-z0-9\-]+">
-                            </div>
-                        </div>
-                        <div class="form-row">
-                            <div class="input-group">
-                                <label>USUARIO ADMIN</label>
-                                <input type="text" id="tenant-admin-username" required placeholder="Ej: admin_abuela">
-                            </div>
-                            <div class="input-group" style="flex:2;">
-                                <label>CORREO DEL ADMIN</label>
-                                <input type="email" id="tenant-admin-email" required placeholder="admin@empresa.com">
+                                <label>CONTRASEÑA</label>
+                                <input type="password" id="tenant-password" required placeholder="Ej: MIGUITASBAKERY2026" minlength="6">
                             </div>
                         </div>
                         <div style="display:flex;justify-content:flex-end;margin-top:16px;">
                             <button type="submit" class="btn primary" style="padding:12px 32px;">
-                                <span class="material-symbols-outlined">add_business</span> CREAR INSTANCIA
+                                <span class="material-symbols-outlined">add_business</span> CREAR CUENTA
                             </button>
                         </div>
                         <div id="create-tenant-msg" style="margin-top:12px;"></div>
@@ -185,7 +175,7 @@
 
                 <div class="card">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-                        <h3 style="margin:0;">INSTANCIAS ACTIVAS</h3>
+                        <h3 style="margin:0;">CUENTAS ACTIVAS</h3>
                         <button class="btn secondary outline" onclick="loadTenants()" style="padding:8px 16px;">
                             <span class="material-symbols-outlined">refresh</span>
                         </button>
