@@ -295,10 +295,15 @@ def seed_tenant_categories(tenant_id, cursor):
         "SITIO WEB", "DISEÑADOR", "PACKAGING", "MARKETING"
     ]
     for cat in categories:
-        cursor.execute(
-            "INSERT INTO categories (name, tenant_id) VALUES (%s, %s) ON CONFLICT (name, tenant_id) DO NOTHING",
-            (cat, tenant_id)
-        )
+        cursor.execute("SELECT id FROM categories WHERE name = %s AND tenant_id = %s", (cat, tenant_id))
+        if not cursor.fetchone():
+            try:
+                cursor.execute(
+                    "INSERT INTO categories (name, tenant_id) VALUES (%s, %s)",
+                    (cat, tenant_id)
+                )
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":

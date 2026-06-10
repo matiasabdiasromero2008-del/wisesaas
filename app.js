@@ -59,7 +59,7 @@ function showSASection(secId) {
     document.querySelectorAll('#superadmin-view .section').forEach(s => s.classList.remove('active'));
     const el = document.getElementById(secId); if (el) el.classList.add('active');
     document.querySelectorAll('#superadmin-view .nav-link').forEach(l => l.classList.remove('sa-active'));
-    const titles = { 'sa-tenants': 'GESTIÓN DE INSTANCIAS', 'sa-users': 'TODOS LOS USUARIOS' };
+    const titles = { 'sa-tenants': 'GESTIÓN DE CUENTAS', 'sa-users': 'TODOS LOS USUARIOS' };
     document.getElementById('sa-view-title').textContent = titles[secId] || '';
     if (secId === 'sa-tenants') loadTenants();
     if (secId === 'sa-users') loadAllUsers();
@@ -238,18 +238,25 @@ async function deleteTenant(id, name) {
 document.getElementById('create-tenant-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const m = document.getElementById('create-tenant-msg');
-    const payload = {
-        username: document.getElementById('tenant-username').value.trim(),
-        password: document.getElementById('tenant-password').value.trim()
-    };
-    m.textContent = 'Creando cuenta...'; m.className = '';
-    const res = await apiFetch('/superadmin/tenants', { method: 'POST', body: JSON.stringify(payload) });
-    if (res.ok) {
-        const data = await res.json();
-        m.textContent = data.message; m.className = 'success-msg';
-        e.target.reset(); loadTenants();
-    } else {
-        const d = await res.json(); m.textContent = d.detail || 'Error al crear la cuenta'; m.className = 'error-msg';
+    try {
+        const payload = {
+            username: document.getElementById('tenant-username').value.trim(),
+            password: document.getElementById('tenant-password').value.trim()
+        };
+        m.textContent = 'Creando cuenta...'; m.className = '';
+        const res = await apiFetch('/superadmin/tenants', { method: 'POST', body: JSON.stringify(payload) });
+        
+        let data;
+        try { data = await res.json(); } catch(err) { data = { detail: "Error del servidor (no retornó JSON)" }; }
+        
+        if (res.ok) {
+            m.textContent = data.message || "Cuenta creada exitosamente"; m.className = 'success-msg';
+            e.target.reset(); loadTenants();
+        } else {
+            m.textContent = data.detail || 'Error al crear la cuenta'; m.className = 'error-msg';
+        }
+    } catch (error) {
+        m.textContent = "Error de red o conexión: " + error.message; m.className = 'error-msg';
     }
 });
 
