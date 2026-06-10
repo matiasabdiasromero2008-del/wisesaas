@@ -80,6 +80,12 @@ def init_db():
     except Exception:
         conn.rollback()
 
+    try:
+        cursor.execute("ALTER TABLE categories DROP CONSTRAINT IF EXISTS categories_name_key;")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+
     # ─── Products ───────────────────────────────────────────────────────────────
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS products (
@@ -298,12 +304,14 @@ def seed_tenant_categories(tenant_id, cursor):
         cursor.execute("SELECT id FROM categories WHERE name = %s AND tenant_id = %s", (cat, tenant_id))
         if not cursor.fetchone():
             try:
+                cursor.execute("SAVEPOINT cat_sp")
                 cursor.execute(
                     "INSERT INTO categories (name, tenant_id) VALUES (%s, %s)",
                     (cat, tenant_id)
                 )
+                cursor.execute("RELEASE SAVEPOINT cat_sp")
             except Exception:
-                pass
+                cursor.execute("ROLLBACK TO SAVEPOINT cat_sp")
 
 
 if __name__ == "__main__":
