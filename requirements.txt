@@ -1,4 +1,5 @@
 bcrypt
+python-dotenv
 matplotlib
 fpdf2
 pandas

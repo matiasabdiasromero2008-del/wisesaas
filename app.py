@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -181,8 +184,9 @@ class IngredientModel(BaseModel):
 class ProductModel(BaseModel):
     flavor_name: str
     sale_price: float
-    yield_per_batch: float
+    yield_per_batch: float = 1
     min_stock: Optional[int] = 0
+    article_type: Optional[str] = 'FORMULA'
 
 class RecipeItem(BaseModel):
     ingredient_id: int
@@ -211,6 +215,11 @@ class SaleRequest(BaseModel):
     items: List[SaleItemModel]
     discount: float = 0
     date: Optional[str] = None
+
+class SaleEditModel(BaseModel):
+    client_name: str
+    date: Optional[str] = None
+    discount: Optional[float] = 0
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -670,8 +679,33 @@ def add_provider(req: ProviderModel, user: dict = Depends(get_current_user)):
         conn.commit()
         return {"success": True}
     except HTTPException:
+        conn.rollback()
         raise
     except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        conn.close()
+
+
+@app.put("/providers/{provider_id}")
+def update_provider(provider_id: int, req: ProviderModel, user: dict = Depends(get_current_user)):
+    tenant_id = get_tenant_id(user)
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id FROM categories WHERE name = %s AND tenant_id = %s", (req.category_name, tenant_id))
+        cat_row = cursor.fetchone()
+        if not cat_row:
+            raise HTTPException(status_code=400, detail="Categoría no encontrada")
+        cursor.execute("UPDATE providers SET name = %s, category_id = %s WHERE id = %s AND tenant_id = %s",
+                       (req.name, cat_row[0], provider_id, tenant_id))
+        conn.commit()
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
         raise HTTPException(status_code=400, detail=str(e))
     finally:
         conn.close()
@@ -773,6 +807,7 @@ def add_ingredient(req: IngredientModel, user: dict = Depends(get_current_user))
         conn.commit()
         return {"success": True}
     except Exception as e:
+        conn.rollback()
         raise HTTPException(status_code=400, detail=str(e))
     finally:
         conn.close()
@@ -787,10 +822,10 @@ def get_products(user: dict = Depends(get_current_user)):
     tenant_id = get_tenant_id(user)
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, flavor_name, sale_price, current_gpu, yield_per_batch, min_stock FROM products WHERE tenant_id = %s", (tenant_id,))
+    cursor.execute("SELECT id, flavor_name, sale_price, current_gpu, yield_per_batch, min_stock, article_type FROM products WHERE tenant_id = %s", (tenant_id,))
     results = cursor.fetchall()
     conn.close()
-    return [{"id": r[0], "name": r[1], "price": r[2], "gpu": r[3], "yield": r[4], "min_stock": r[5] or 0} for r in results]
+    return [{"id": r[0], "name": r[1], "price": r[2], "gpu": r[3], "yield": r[4], "min_stock": r[5] or 0, "article_type": r[6] or 'FORMULA'} for r in results]
 
 
 @app.post("/products")
@@ -800,12 +835,14 @@ def add_product(req: ProductModel, user: dict = Depends(get_current_user)):
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            INSERT INTO products (flavor_name, sale_price, yield_per_batch, min_stock, tenant_id)
-            VALUES (%s, %s, %s, %s, %s)
-        """, (req.flavor_name, req.sale_price, req.yield_per_batch, req.min_stock or 0, tenant_id))
+            INSERT INTO products (flavor_name, sale_price, yield_per_batch, min_stock, article_type, tenant_id)
+            VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
+        """, (req.flavor_name, req.sale_price, req.yield_per_batch, req.min_stock or 0, req.article_type or 'FORMULA', tenant_id))
+        new_id = cursor.fetchone()[0]
         conn.commit()
-        return {"success": True}
+        return {"success": True, "id": new_id}
     except Exception as e:
+        conn.rollback()
         raise HTTPException(status_code=400, detail=str(e))
     finally:
         conn.close()
@@ -845,9 +882,9 @@ def update_product(product_id: int, req: ProductModel, user: dict = Depends(get_
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            UPDATE products SET flavor_name = %s, sale_price = %s, yield_per_batch = %s, min_stock = %s
+            UPDATE products SET flavor_name = %s, sale_price = %s, yield_per_batch = %s, min_stock = %s, article_type = %s
             WHERE id = %s AND tenant_id = %s
-        """, (req.flavor_name, req.sale_price, req.yield_per_batch, req.min_stock or 0, product_id, tenant_id))
+        """, (req.flavor_name, req.sale_price, req.yield_per_batch, req.min_stock or 0, req.article_type or 'FORMULA', product_id, tenant_id))
         conn.commit()
         return {"success": True}
     except Exception as e:
@@ -1000,6 +1037,29 @@ def get_sale_items(sale_id: int, user: dict = Depends(get_current_user)):
     rows = cursor.fetchall()
     conn.close()
     return [{"product": r[0], "quantity": r[1], "unit_price": r[2], "gpu": r[3], "subtotal": r[4], "costo_total": r[5]} for r in rows]
+
+
+@app.put("/sales/{sale_id}")
+def update_sale(sale_id: int, req: SaleEditModel, user: dict = Depends(get_current_user)):
+    tenant_id = get_tenant_id(user)
+    date_str = req.date if req.date else datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id FROM sales WHERE id = %s AND tenant_id = %s", (sale_id, tenant_id))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Venta no encontrada")
+        cursor.execute("UPDATE sales SET client_name = %s, date = %s, discount = %s WHERE id = %s AND tenant_id = %s",
+                       (req.client_name, date_str, req.discount or 0, sale_id, tenant_id))
+        conn.commit()
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        conn.close()
 
 
 @app.delete("/sales/{sale_id}")

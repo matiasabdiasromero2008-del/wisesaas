@@ -117,7 +117,7 @@
     <!-- ═══════════════════════════════════════════════════════════════════ -->
     <div id="superadmin-view" class="view">
         <nav class="sidebar">
-            <div class="brand">
+            <div class="brand" onclick="toggleTheme()" title="Clic para cambiar tema" style="cursor:pointer;">
                 <svg viewBox="0 0 320 80" class="wise-logo-svg" xmlns="http://www.w3.org/2000/svg">
                     <g class="wise-logo-group">
                         <path class="wise-svg-bar wise-svg-bar-1" d="M25,56 L52,40 L62,45 L35,61 Z" fill="var(--logo-color)" />
@@ -211,7 +211,7 @@
     <!-- ═══════════════════════════════════════════════════════════════════ -->
     <div id="dashboard-view" class="view">
         <nav class="sidebar">
-            <div class="brand">
+            <div class="brand" onclick="toggleTheme()" title="Clic para cambiar tema" style="cursor:pointer;">
                 <svg viewBox="0 0 320 80" class="wise-logo-svg" xmlns="http://www.w3.org/2000/svg">
                     <g class="wise-logo-group">
                         <path class="wise-svg-bar wise-svg-bar-1" d="M25,56 L52,40 L62,45 L35,61 Z" fill="var(--logo-color)" />
@@ -293,7 +293,7 @@
                     </div>
                     <div class="cards-grid" style="margin-bottom: 24px;">
                         <div class="card metric-card" style="border-radius: 16px;"><h3>Total Ingresos Brutos</h3><div class="value positive" id="perf-total-ingresos" style="font-size: 1.8rem; font-weight: 700;">$0.00</div><p style="font-size: 0.75rem; color: var(--text-muted); margin: 5px 0 0 0;">Ingresos totales del mes</p></div>
-                        <div class="card metric-card" style="border-radius: 16px;"><h3>GTR (Gasto Total Real)</h3><div class="value negative" id="perf-total-gtr" style="font-size: 1.8rem; font-weight: 700; color: #f472b6;">$0.00</div><p style="font-size: 0.75rem; color: var(--text-muted); margin: 5px 0 0 0;">Sumatoria de unidades vendidas × GPU</p></div>
+                        <div class="card metric-card" style="border-radius: 16px;"><h3>GTR (Gasto Total Real)</h3><div class="value negative" id="perf-total-gtr" style="font-size: 1.8rem; font-weight: 700; color: #f472b6;">$0.00</div><p style="font-size: 0.75rem; color: var(--text-muted); margin: 5px 0 0 0;">Sumatoria de unidades vendidas × COGS</p></div>
                         <div class="card metric-card" style="border-radius: 16px;"><h3>Total Egresos Reales</h3><div class="value negative" id="perf-total-egresos" style="font-size: 1.8rem; font-weight: 700; color: #f472b6;">$0.00</div><p style="font-size: 0.75rem; color: var(--text-muted); margin: 5px 0 0 0;">Suma de gastos reales del mes</p></div>
                     </div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px;" class="perf-details-grid">
@@ -468,35 +468,62 @@
                 </div>
             </section>
 
-            <!-- PRODUCTOS -->
+            <!-- ARTÍCULOS -->
             <section id="sec-escandallos" class="section">
                 <div class="card">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-                        <h3 style="margin:0;">GESTIÓN DE PRODUCTOS Y RECETAS</h3>
+                        <h3 style="margin:0;">GESTIÓN DE ARTÍCULOS</h3>
                         <button type="button" id="cancel-edit-product-btn" class="btn secondary outline" style="display:none;padding:6px 12px;font-size:0.8rem;"><span class="material-symbols-outlined" style="font-size:1rem;">close</span> CANCELAR EDICIÓN</button>
                     </div>
                     <form id="escandallo-form">
+                        <!-- Selector de tipo de artículo -->
+                        <div style="display:flex;gap:12px;margin-bottom:20px;">
+                            <label style="flex:1;cursor:pointer;">
+                                <input type="radio" name="article-type-radio" id="esc-type-formula" value="FORMULA" checked style="display:none;">
+                                <div class="article-type-btn active" id="article-type-formula-btn" style="border:2px solid var(--primary);border-radius:10px;padding:12px 16px;text-align:center;transition:all 0.2s;">
+                                    <span class="material-symbols-outlined" style="font-size:1.4rem;display:block;margin-bottom:4px;">science</span>
+                                    <strong style="font-size:0.85rem;">ARTÍCULO FÓRMULA</strong>
+                                    <p style="font-size:0.72rem;color:var(--text-muted);margin:4px 0 0 0;">Lo fabricás vos con ingredientes</p>
+                                </div>
+                            </label>
+                            <label style="flex:1;cursor:pointer;">
+                                <input type="radio" name="article-type-radio" id="esc-type-simple" value="SIMPLE" style="display:none;">
+                                <div class="article-type-btn" id="article-type-simple-btn" style="border:2px solid var(--surface-border);border-radius:10px;padding:12px 16px;text-align:center;transition:all 0.2s;">
+                                    <span class="material-symbols-outlined" style="font-size:1.4rem;display:block;margin-bottom:4px;">shopping_bag</span>
+                                    <strong style="font-size:0.85rem;">ARTÍCULO SIMPLE</strong>
+                                    <p style="font-size:0.72rem;color:var(--text-muted);margin:4px 0 0 0;">Lo comprás y revendés</p>
+                                </div>
+                            </label>
+                        </div>
                         <div class="form-row">
-                            <div class="input-group" style="flex:2"><label>NOMBRE DEL PRODUCTO</label><input type="text" id="esc-sabor" required placeholder="Ej: Mermelada de Higo"></div>
-                            <div class="input-group"><label>PRECIO VENTA ($)</label><input type="number" step="0.01" id="esc-sale-price" required></div>
-                            <div class="input-group"><label>RENDIMIENTO (FRASCOS)</label><input type="number" step="0.01" id="esc-yield" required value="1"></div>
+                            <div class="input-group" style="flex:2"><label>NOMBRE DEL ARTÍCULO</label><input type="text" id="esc-sabor" required placeholder="Ej: Mermelada de Higo"></div>
+                            <div class="input-group"><label>PRECIO DE VENTA ($)</label><input type="number" step="0.01" id="esc-sale-price" required></div>
+                            <div class="input-group" id="esc-yield-group"><label>RENDIMIENTO (UNIDADES)</label><input type="number" step="0.01" id="esc-yield" value="1"></div>
                             <div class="input-group"><label>STOCK MÍNIMO</label><input type="number" id="esc-min-stock" placeholder="Ej: 5" min="0" value="0"></div>
                         </div>
-                        <div id="esc-items-container"></div>
-                        <button type="button" id="esc-add-item-btn" class="btn secondary outline" style="width:auto;margin-top:10px;"><span class="material-symbols-outlined">add</span> AGREGAR INSUMO</button>
+                        <!-- Sección exclusiva de FÓRMULA -->
+                        <div id="esc-formula-section">
+                            <div id="esc-items-container"></div>
+                            <button type="button" id="esc-add-item-btn" class="btn secondary outline" style="width:auto;margin-top:10px;"><span class="material-symbols-outlined">add</span> AGREGAR INSUMO</button>
+                        </div>
+                        <!-- Nota SIMPLE -->
+                        <div id="esc-simple-note" style="display:none;padding:12px;background:rgba(37,99,235,0.08);border-radius:8px;margin-top:12px;font-size:0.85rem;color:var(--text-muted);">
+                            <span class="material-symbols-outlined" style="font-size:1rem;vertical-align:middle;">info</span>
+                            El COGS de este artículo se calculará automáticamente desde el último precio cargado en <strong>GASTOS</strong> con el mismo nombre.
+                        </div>
                         <div style="display:flex;justify-content:flex-end;align-items:center;gap:30px;margin-top:30px;border-top:1px solid var(--surface-border);padding-top:20px;">
-                            <div style="text-align:right;"><div style="font-size:0.8rem;color:var(--text-muted);">COSTO TANDA:</div><div style="font-size:1.2rem;font-weight:700;" id="esc-total-batch-cost">$0.00</div></div>
-                            <div style="text-align:right;"><div style="font-size:0.8rem;color:var(--text-muted);">GPU (COSTO UNITARIO):</div><div style="font-size:1.5rem;font-weight:700;color:var(--primary);" id="esc-gpu-display">$0.00</div></div>
-                            <button type="submit" class="btn primary" style="padding:12px 40px;"><span class="material-symbols-outlined">save</span> GUARDAR PRODUCTO</button>
+                            <div id="esc-cogs-section" style="text-align:right;"><div style="font-size:0.8rem;color:var(--text-muted);">COSTO TANDA:</div><div style="font-size:1.2rem;font-weight:700;" id="esc-total-batch-cost">$0.00</div></div>
+                            <div style="text-align:right;"><div style="font-size:0.8rem;color:var(--text-muted);">COGS (COSTO UNITARIO):</div><div style="font-size:1.5rem;font-weight:700;color:var(--primary);" id="esc-gpu-display">$0.00</div></div>
+                            <button type="submit" class="btn primary" style="padding:12px 40px;"><span class="material-symbols-outlined">save</span> GUARDAR ARTÍCULO</button>
                         </div>
                         <div id="esc-msg"></div>
                     </form>
                 </div>
                 <div class="card mt-4">
-                    <h3>PLANILLA MAESTRA DE PRODUCTOS</h3>
+                    <h3>PLANILLA DE ARTÍCULOS</h3>
                     <div class="table-container">
                         <table class="data-table">
-                            <thead><tr><th style="width:40px;"></th><th>PRODUCTO</th><th>RENDIMIENTO</th><th>STOCK MÍN.</th><th>PRECIO VENTA</th><th>GPU</th><th style="width:100px;">ACCIONES</th></tr></thead>
+                            <thead><tr><th style="width:40px;"></th><th>ARTÍCULO</th><th>TIPO</th><th>RENDIMIENTO</th><th>STOCK MÍN.</th><th>PRECIO DE VENTA</th><th>COGS</th><th style="width:100px;">ACCIONES</th></tr></thead>
                             <tbody id="escandallo-tbody"></tbody>
                         </table>
                     </div>
@@ -547,7 +574,7 @@
 </div>
 
 <datalist id="ingredients-list"></datalist>
-<script src="/static/app.js?v=3.0.0"></script>
+<script src="/static/app.js?v=3.1.0"></script>
 <script>
     function closeModal() { document.getElementById('detail-modal').style.display = 'none'; }
 

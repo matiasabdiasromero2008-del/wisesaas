@@ -19,11 +19,33 @@ def update_all_gpus(tenant_id: int):
 
 
 def recalculate_product_gpu(product_id: int, cursor):
-    """Calcula GPU = sum(qty * cost) / rendimiento."""
-    cursor.execute("SELECT yield_per_batch FROM products WHERE id = %s", (product_id,))
+    """Calcula COGS por unidad. Para FORMULA: suma ingredientes / rendimiento. Para SIMPLE: último precio de compra desde gastos."""
+    cursor.execute("SELECT yield_per_batch, flavor_name, article_type, tenant_id FROM products WHERE id = %s", (product_id,))
     row = cursor.fetchone()
-    yield_val = row[0] if row and row[0] else 1
+    if not row:
+        return
+    yield_val = row[0] if row[0] else 1
+    flavor_name = row[1]
+    article_type = row[2] or 'FORMULA'
+    tenant_id = row[3]
 
+    if article_type == 'SIMPLE':
+        # COGS = último precio unitario cargado en gastos con descripción igual al nombre del artículo
+        cursor.execute('''
+            SELECT ei.unit_price
+            FROM expense_items ei
+            JOIN expenses e ON ei.expense_id = e.id
+            WHERE UPPER(TRIM(ei.description)) = UPPER(TRIM(%s))
+              AND e.tenant_id = %s
+            ORDER BY e.date DESC, e.id DESC
+            LIMIT 1
+        ''', (flavor_name, tenant_id))
+        cost_row = cursor.fetchone()
+        cogs = cost_row[0] if cost_row else 0
+        cursor.execute("UPDATE products SET current_gpu = %s WHERE id = %s", (cogs, product_id))
+        return
+
+    # FORMULA: suma(cantidad × costo_ingrediente) / rendimiento
     cursor.execute('''
         SELECT pi.quantity_per_batch, i.last_unit_cost
         FROM product_ingredients pi
@@ -85,12 +107,12 @@ def add_expense(provider: str, category_name: str, items_list: list, date_str: s
 
     conn.commit()
 
-    if category_name == "INSUMOS":
-        cursor.execute("SELECT id FROM products WHERE tenant_id = %s", (tenant_id,))
-        products = cursor.fetchall()
-        for (p_id,) in products:
-            recalculate_product_gpu(p_id, cursor)
-        conn.commit()
+    # Recalcular COGS: FORMULA cuando cambian INSUMOS, SIMPLE siempre (cualquier gasto puede ser su costo)
+    cursor.execute("SELECT id FROM products WHERE tenant_id = %s", (tenant_id,))
+    all_products = cursor.fetchall()
+    for (p_id,) in all_products:
+        recalculate_product_gpu(p_id, cursor)
+    conn.commit()
 
     conn.close()
 

@@ -1,26 +1,39 @@
 :root {
-    --primary: #2563eb; /* Azul brillante premium de WISE */
+    --primary: #2563eb;
     --primary-hover: #1d4ed8;
     --primary-light: rgba(37, 99, 235, 0.12);
-    --bg-dark: #0f172a; /* Fondo azul marino profundo elegante */
-    --surface: #1e293b; /* Fondo slate para tarjetas y paneles */
+    --bg-dark: #0f172a;
+    --surface: #1e293b;
     --surface-border: rgba(255, 255, 255, 0.08);
     --text-main: #f8fafc;
     --text-muted: #94a3b8;
-    --positive: #10b981; /* Verde esmeralda */
-    --negative: #f43f5e; /* Rojo rubí/frambuesa */
+    --positive: #10b981;
+    --negative: #f43f5e;
     --glass-bg: rgba(30, 41, 59, 0.85);
-    --logo-color: #ffffff; /* Logo blanco en tema oscuro */
+    --logo-color: #ffffff;
+    --input-bg: #0f172a;
+    --table-bg: #0f172a;
+    --btn-outline-bg: rgba(255,255,255,0.05);
+    --btn-outline-hover: rgba(255,255,255,0.08);
+    --skeleton-a: #1e293b;
+    --skeleton-b: #334155;
 }
 
 [data-theme='light'] {
-    --bg-dark: #f8fafc;
+    --bg-dark: #f1f5f9;
     --surface: #ffffff;
-    --surface-border: rgba(15, 23, 42, 0.08);
+    --surface-border: rgba(15, 23, 42, 0.10);
     --text-main: #0f172a;
     --text-muted: #64748b;
-    --glass-bg: rgba(255, 255, 255, 0.85);
-    --logo-color: #0f172a; /* Logo azul marino oscuro en tema claro */
+    --glass-bg: rgba(255, 255, 255, 0.92);
+    --logo-color: #0f172a;
+    --input-bg: #f8fafc;
+    --table-bg: #f8fafc;
+    --btn-outline-bg: rgba(15,23,42,0.04);
+    --btn-outline-hover: rgba(15,23,42,0.08);
+    --skeleton-a: #e2e8f0;
+    --skeleton-b: #cbd5e1;
+    --primary-light: rgba(37, 99, 235, 0.10);
 }
 
 * { box-sizing: border-box; }
@@ -144,7 +157,7 @@ body {
     padding: 15px 16px !important;
 }
 .skeleton-bar {
-    background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
+    background: linear-gradient(90deg, var(--skeleton-a) 25%, var(--skeleton-b) 50%, var(--skeleton-a) 75%);
     background-size: 200% 100%;
     animation: skeletonShimmer 1.5s infinite;
     border-radius: 6px;
@@ -196,13 +209,13 @@ header h2 { font-size: 1.5rem; font-weight: 600; margin: 0; color: var(--text-ma
 .input-group { display: flex; flex-direction: column; flex: 1; min-width: 150px; }
 .input-group label { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; }
 input, select, textarea {
-    background: #0f172a; /* Slate oscuro para inputs premium */
+    background: var(--input-bg);
     border: 1px solid var(--surface-border);
     border-radius: 8px;
     padding: 10px 14px;
-    color: white;
+    color: var(--text-main);
     outline: none;
-    transition: border-color 0.2s, box-shadow 0.2s;
+    transition: border-color 0.2s, box-shadow 0.2s, background 0.3s, color 0.3s;
     font-family: inherit;
 }
 input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-light); }
@@ -224,15 +237,15 @@ input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 2px 
 .btn.primary:hover { background: var(--primary-hover); transform: translateY(-1px); }
 .btn.primary:active { transform: translateY(1px); }
 .btn.secondary.outline {
-    background: rgba(255,255,255,0.05);
+    background: var(--btn-outline-bg);
     border: 1px solid var(--surface-border);
     color: var(--text-muted);
 }
-.btn.secondary.outline:hover { background: rgba(255,255,255,0.08); color: white; }
+.btn.secondary.outline:hover { background: var(--btn-outline-hover); color: var(--text-main); }
 .btn-icon { padding: 6px 10px; border-radius: 6px; }
 
 /* Tables */
-.table-container { border-radius: 12px; overflow: hidden; background: #0f172a; border: 1px solid var(--surface-border); }
+.table-container { border-radius: 12px; overflow: hidden; background: var(--table-bg); border: 1px solid var(--surface-border); }
 .data-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem; }
 .data-table th { background: rgba(0,0,0,0.25); padding: 14px 16px; font-size: 0.75rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; border-bottom: 1px solid var(--surface-border); }
 .data-table td { padding: 14px 16px; border-bottom: 1px solid var(--surface-border); }
@@ -270,6 +283,13 @@ input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 2px 
 ::-webkit-scrollbar-thumb { background: var(--surface-border); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); }
 
+/* Tema claro – ajustes de tabla y botones */
+[data-theme='light'] .data-table th { background: rgba(15,23,42,0.05); }
+[data-theme='light'] .data-table tr:hover td { background: rgba(15,23,42,0.03); }
+[data-theme='light'] .data-table tr.group-header td { background: rgba(37,99,235,0.08); }
+[data-theme='light'] .ingredient-row { background: rgba(15,23,42,0.03); }
+[data-theme='light'] .modal-content { background: var(--surface); }
+
 /* Animación de rotación para loaders */
 .animate-spin {
     animation: spin 1s infinite linear;
@@ -279,3 +299,36 @@ input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 2px 
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
 }
+
+/* Animaciones de entrada */
+@keyframes slideInUp {
+    from { opacity: 0; transform: translateY(18px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideInLeft {
+    from { opacity: 0; transform: translateX(-18px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes popIn {
+    from { opacity: 0; transform: scale(0.95); }
+    to   { opacity: 1; transform: scale(1); }
+}
+
+.login-card { animation: popIn 0.45s cubic-bezier(0.34,1.56,0.64,1) both; }
+.sidebar { animation: slideInLeft 0.35s ease both; }
+.card { animation: slideInUp 0.35s ease both; }
+.section.active .card:nth-child(1) { animation-delay: 0s; }
+.section.active .card:nth-child(2) { animation-delay: 0.06s; }
+.section.active .card:nth-child(3) { animation-delay: 0.12s; }
+
+/* Logo hover */
+.brand svg { transition: transform 0.2s ease; }
+.brand:hover svg { transform: scale(1.04); }
+
+/* Transición suave del tema en toda la UI */
+*, *::before, *::after {
+    transition: background-color 0.3s ease, border-color 0.3s ease, color 0.15s ease;
+}
+/* Excepciones: animaciones no deben heredar la transición */
+.animate-spin, .skeleton-bar, .bar-fill, .btn { transition: none; }
+.btn { transition: background 0.2s ease, transform 0.1s ease, color 0.2s ease, border-color 0.2s ease; }

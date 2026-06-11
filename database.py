@@ -2,7 +2,9 @@ import psycopg2
 import bcrypt
 import os
 
-DB_URL = os.environ.get("DATABASE_URL", "postgresql://neondb_owner:npg_3qmQAyfaS8oJ@ep-cool-waterfall-ajt00qej-pooler.c-3.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require")
+DB_URL = os.environ.get("DATABASE_URL")
+if not DB_URL:
+    raise RuntimeError("La variable de entorno DATABASE_URL no está configurada.")
 
 def get_connection():
     return psycopg2.connect(DB_URL)
@@ -95,18 +97,32 @@ def init_db():
         yield_per_batch REAL DEFAULT 1,
         current_gpu REAL DEFAULT 0,
         min_stock INTEGER DEFAULT 0,
+        article_type TEXT DEFAULT 'FORMULA',
         tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE
     )
     ''')
     for col in [
         ("tenant_id", "INTEGER REFERENCES tenants(id) ON DELETE CASCADE"),
         ("min_stock", "INTEGER DEFAULT 0"),
+        ("article_type", "TEXT DEFAULT 'FORMULA'"),
     ]:
         try:
             cursor.execute(f"ALTER TABLE products ADD COLUMN IF NOT EXISTS {col[0]} {col[1]};")
             conn.commit()
         except Exception:
             conn.rollback()
+    # Eliminar constraint único global de nombre (era del sistema single-tenant)
+    try:
+        cursor.execute("ALTER TABLE products DROP CONSTRAINT IF EXISTS products_flavor_name_key;")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+    # Eliminar constraint único global de proveedores (era del sistema single-tenant)
+    try:
+        cursor.execute("ALTER TABLE providers DROP CONSTRAINT IF EXISTS providers_name_key;")
+        conn.commit()
+    except Exception:
+        conn.rollback()
 
     # ─── Ingredients ────────────────────────────────────────────────────────────
     cursor.execute('''
@@ -114,11 +130,18 @@ def init_db():
         id SERIAL PRIMARY KEY,
         name TEXT NOT NULL,
         last_unit_cost REAL DEFAULT 0,
-        tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE
+        tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE,
+        UNIQUE(name, tenant_id)
     )
     ''')
     try:
         cursor.execute("ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE;")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+    # Agregar constraint único si no existe (para instancias ya creadas)
+    try:
+        cursor.execute("ALTER TABLE ingredients ADD CONSTRAINT ingredients_name_tenant_unique UNIQUE(name, tenant_id);")
         conn.commit()
     except Exception:
         conn.rollback()
@@ -275,21 +298,19 @@ def init_db():
 
     conn.commit()
 
-    # ─── Crear o Actualizar Super Admin por defecto ──────────────────────────────
-    admin_pass = bcrypt.hashpw("MATIAS2008".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    # ─── Crear Super Admin si no existe ─────────────────────────────────────────
+    sa_password = os.environ.get("SUPERADMIN_PASSWORD")
+    if not sa_password:
+        raise RuntimeError("La variable de entorno SUPERADMIN_PASSWORD no está configurada.")
     cursor.execute("SELECT id FROM users WHERE role = 'SuperAdmin' LIMIT 1")
     row = cursor.fetchone()
     if not row:
+        admin_pass = bcrypt.hashpw(sa_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
         cursor.execute(
             "INSERT INTO users (username, password_hash, role, tenant_id, email) VALUES (%s, %s, %s, NULL, %s)",
             ("superadmin", admin_pass, "SuperAdmin", "wissesaas@gmail.com")
         )
-    else:
-        cursor.execute(
-            "UPDATE users SET password_hash = %s WHERE id = %s",
-            (admin_pass, row[0])
-        )
-    conn.commit()
+        conn.commit()
 
     conn.close()
 
