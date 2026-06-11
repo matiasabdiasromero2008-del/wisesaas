@@ -97,18 +97,32 @@ def init_db():
         yield_per_batch REAL DEFAULT 1,
         current_gpu REAL DEFAULT 0,
         min_stock INTEGER DEFAULT 0,
+        article_type TEXT DEFAULT 'FORMULA',
         tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE
     )
     ''')
     for col in [
         ("tenant_id", "INTEGER REFERENCES tenants(id) ON DELETE CASCADE"),
         ("min_stock", "INTEGER DEFAULT 0"),
+        ("article_type", "TEXT DEFAULT 'FORMULA'"),
     ]:
         try:
             cursor.execute(f"ALTER TABLE products ADD COLUMN IF NOT EXISTS {col[0]} {col[1]};")
             conn.commit()
         except Exception:
             conn.rollback()
+    # Eliminar constraint único global de nombre (era del sistema single-tenant)
+    try:
+        cursor.execute("ALTER TABLE products DROP CONSTRAINT IF EXISTS products_flavor_name_key;")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+    # Eliminar constraint único global de proveedores (era del sistema single-tenant)
+    try:
+        cursor.execute("ALTER TABLE providers DROP CONSTRAINT IF EXISTS providers_name_key;")
+        conn.commit()
+    except Exception:
+        conn.rollback()
 
     # ─── Ingredients ────────────────────────────────────────────────────────────
     cursor.execute('''

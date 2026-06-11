@@ -285,7 +285,7 @@ function setupDashboard() {
         addNav('conveyor_belt', 'INGRESOS', 'sec-ingresos');
         addNav('person', 'CLIENTES', 'sec-clientes');
         addNav('local_shipping', 'PROVEEDORES', 'sec-proveedores');
-        addNav('inventory_2', 'PRODUCTOS', 'sec-escandallos');
+        addNav('inventory_2', 'ARTÍCULOS', 'sec-escandallos');
         addNav('manage_accounts', 'USUARIOS', 'sec-usuarios');
         switchSection('sec-performance', 'PERFORMANCE');
     } else {
@@ -372,22 +372,31 @@ async function loadIngredientsCache() {
 
 async function loadEscandalloTable() {
     const tbody = document.getElementById('escandallo-tbody');
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:20px;"><span class="material-symbols-outlined animate-spin" style="vertical-align:middle;">sync</span> Cargando productos...</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:20px;"><span class="material-symbols-outlined animate-spin" style="vertical-align:middle;">sync</span> Cargando artículos...</td></tr>`;
     try {
         const res = await apiFetch('/products');
-        if (!res.ok) throw new Error('Error al cargar productos');
+        if (!res.ok) throw new Error('Error al cargar artículos');
         const products = await res.json();
         tbody.innerHTML = '';
-        if (products.length === 0) { tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:20px;">No hay productos creados todavía.</td></tr>`; return; }
+        if (products.length === 0) { tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:20px;">No hay artículos creados todavía.</td></tr>`; return; }
         for (const prod of products) {
+            const isSimple = (prod.article_type === 'SIMPLE');
             let ingredients = [];
-            try { const ingRes = await apiFetch(`/recipes/${prod.id}`); if (ingRes.ok) ingredients = await ingRes.json(); } catch(_) {}
-            const ingHtml = ingredients.map(ing => `<tr class="ingredient-row row-prod-${prod.id}"><td></td><td style="padding-left:30px;color:var(--text-muted);"><span class="material-symbols-outlined" style="font-size:1rem;vertical-align:middle;">subdirectory_arrow_right</span> ${ing.name}</td><td colspan="3" class="text-muted">Cant: ${ing.quantity}</td><td colspan="2" class="text-muted">$${(ing.quantity * ing.cost).toFixed(2)}</td></tr>`).join('');
+            if (!isSimple) {
+                try { const ingRes = await apiFetch(`/recipes/${prod.id}`); if (ingRes.ok) ingredients = await ingRes.json(); } catch(_) {}
+            }
+            const ingHtml = ingredients.map(ing => `<tr class="ingredient-row row-prod-${prod.id}"><td></td><td></td><td style="padding-left:30px;color:var(--text-muted);"><span class="material-symbols-outlined" style="font-size:1rem;vertical-align:middle;">subdirectory_arrow_right</span> ${ing.name}</td><td colspan="3" class="text-muted">Cant: ${ing.quantity}</td><td colspan="2" class="text-muted">$${(ing.quantity * ing.cost).toFixed(2)}</td></tr>`).join('');
             const minStockText = (prod.min_stock && prod.min_stock > 0) ? `${prod.min_stock} u.` : '-';
-            tbody.innerHTML += `<tr class="group-header"><td style="text-align:center;">${ingredients.length > 0 ? `<span class="material-symbols-outlined toggle-btn" onclick="toggleIng(${prod.id},this)">expand_more</span>` : ''}</td><td><strong>${prod.name}</strong></td><td>${prod.yield || 1}</td><td style="text-align:center; font-weight: 600;">${minStockText}</td><td>$${prod.price.toFixed(2)}</td><td><strong style="color:var(--primary);">$${prod.gpu.toFixed(2)}</strong></td><td style="white-space:nowrap;"><button class="btn secondary outline btn-icon" onclick="editProduct(${prod.id},'${prod.name}',${prod.price},${prod.yield || 1},${prod.min_stock || 0})" title="Editar"><span class="material-symbols-outlined">edit</span></button> <button class="btn secondary outline btn-icon" onclick="deleteProduct(${prod.id})" title="Eliminar"><span class="material-symbols-outlined">delete</span></button></td></tr>${ingHtml}`;
+            const typeTag = isSimple
+                ? `<span class="tag tag-blue" style="font-size:0.7rem;">SIMPLE</span>`
+                : `<span class="tag tag-green" style="font-size:0.7rem;">FÓRMULA</span>`;
+            const cogsLabel = isSimple
+                ? `<strong style="color:var(--primary);">$${prod.gpu.toFixed(2)}</strong><span style="font-size:0.7rem;color:var(--text-muted);display:block;">desde gastos</span>`
+                : `<strong style="color:var(--primary);">$${prod.gpu.toFixed(2)}</strong>`;
+            tbody.innerHTML += `<tr class="group-header"><td style="text-align:center;">${ingredients.length > 0 ? `<span class="material-symbols-outlined toggle-btn" onclick="toggleIng(${prod.id},this)">expand_more</span>` : ''}</td><td><strong>${prod.name}</strong></td><td>${typeTag}</td><td>${isSimple ? '-' : (prod.yield || 1)}</td><td style="text-align:center; font-weight: 600;">${minStockText}</td><td>$${prod.price.toFixed(2)}</td><td>${cogsLabel}</td><td style="white-space:nowrap;"><button class="btn secondary outline btn-icon" onclick="editProduct(${prod.id},'${prod.name}',${prod.price},${prod.yield || 1},${prod.min_stock || 0},'${prod.article_type || 'FORMULA'}')" title="Editar"><span class="material-symbols-outlined">edit</span></button> <button class="btn secondary outline btn-icon" onclick="deleteProduct(${prod.id})" title="Eliminar"><span class="material-symbols-outlined">delete</span></button></td></tr>${ingHtml}`;
         }
     } catch(err) {
-        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--negative);padding:20px;">Error al cargar la tabla. Recargá la página.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--negative);padding:20px;">Error al cargar la tabla. Recargá la página.</td></tr>`;
     }
 }
 
@@ -422,17 +431,37 @@ function updateEscTotals() {
 if (document.getElementById('esc-yield')) document.getElementById('esc-yield').addEventListener('input', updateEscTotals);
 
 let editingProductId = null;
-function editProduct(id, name, price, yld, minStock) {
+function setArticleType(type) {
+    const isSimple = (type === 'SIMPLE');
+    document.getElementById('esc-type-formula').checked = !isSimple;
+    document.getElementById('esc-type-simple').checked = isSimple;
+    document.getElementById('article-type-formula-btn').style.borderColor = isSimple ? 'var(--surface-border)' : 'var(--primary)';
+    document.getElementById('article-type-simple-btn').style.borderColor = isSimple ? 'var(--primary)' : 'var(--surface-border)';
+    document.getElementById('esc-yield-group').style.display = isSimple ? 'none' : '';
+    document.getElementById('esc-formula-section').style.display = isSimple ? 'none' : '';
+    document.getElementById('esc-simple-note').style.display = isSimple ? '' : 'none';
+    document.getElementById('esc-cogs-section').style.display = isSimple ? 'none' : '';
+}
+document.getElementById('article-type-formula-btn').addEventListener('click', () => setArticleType('FORMULA'));
+document.getElementById('article-type-simple-btn').addEventListener('click', () => setArticleType('SIMPLE'));
+setArticleType('FORMULA');
+
+function editProduct(id, name, price, yld, minStock, articleType) {
     editingProductId = id;
     document.getElementById('esc-sabor').value = name;
     document.getElementById('esc-sale-price').value = price;
     document.getElementById('esc-yield').value = yld;
     document.getElementById('esc-min-stock').value = minStock || 0;
+    setArticleType(articleType || 'FORMULA');
     escCont.innerHTML = ''; document.getElementById('cancel-edit-product-btn').style.display = 'inline-flex';
-    apiFetch(`/recipes/${id}`).then(r => r.json()).then(items => { items.forEach(i => addEscRow(i.name, i.quantity)); if (!items.length) addEscRow(); updateEscTotals(); });
+    if ((articleType || 'FORMULA') !== 'SIMPLE') {
+        apiFetch(`/recipes/${id}`).then(r => r.json()).then(items => { items.forEach(i => addEscRow(i.name, i.quantity)); if (!items.length) addEscRow(); updateEscTotals(); });
+    } else {
+        escCont.innerHTML = ''; updateEscTotals();
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
-document.getElementById('cancel-edit-product-btn').addEventListener('click', () => { editingProductId = null; document.getElementById('escandallo-form').reset(); document.getElementById('esc-min-stock').value = 0; escCont.innerHTML = ''; addEscRow(); updateEscTotals(); document.getElementById('cancel-edit-product-btn').style.display = 'none'; });
+document.getElementById('cancel-edit-product-btn').addEventListener('click', () => { editingProductId = null; document.getElementById('escandallo-form').reset(); document.getElementById('esc-min-stock').value = 0; escCont.innerHTML = ''; addEscRow(); updateEscTotals(); setArticleType('FORMULA'); document.getElementById('cancel-edit-product-btn').style.display = 'none'; });
 document.getElementById('escandallo-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const submitBtn = e.target.querySelector('button[type="submit"]');
@@ -441,54 +470,62 @@ document.getElementById('escandallo-form').addEventListener('submit', async (e) 
     submitBtn.innerHTML = '<span class="material-symbols-outlined animate-spin" style="font-size:1.1rem;vertical-align:middle;">sync</span> GUARDANDO...';
     const sabor = document.getElementById('esc-sabor').value.trim().toUpperCase();
     const price = parseFloat(document.getElementById('esc-sale-price').value);
-    const yld = parseFloat(document.getElementById('esc-yield').value);
+    const yld = parseFloat(document.getElementById('esc-yield').value) || 1;
     const minStock = parseInt(document.getElementById('esc-min-stock').value) || 0;
+    const articleType = document.getElementById('esc-type-simple').checked ? 'SIMPLE' : 'FORMULA';
+    const isSimple = (articleType === 'SIMPLE');
     let productId = editingProductId;
     try {
         if (!productId) {
-            const createRes = await apiFetch('/products', { method: 'POST', body: JSON.stringify({ flavor_name: sabor, sale_price: price, yield_per_batch: yld, min_stock: minStock }) });
+            const createRes = await apiFetch('/products', { method: 'POST', body: JSON.stringify({ flavor_name: sabor, sale_price: price, yield_per_batch: yld, min_stock: minStock, article_type: articleType }) });
             if (!createRes.ok) {
-                let errMsg = 'Error al crear el producto';
+                let errMsg = 'Error al crear el artículo';
                 try { const errData = await createRes.json(); errMsg = errData.detail || errMsg; } catch(_) {}
                 throw new Error(errMsg);
             }
             const createData = await createRes.json();
             productId = createData.id;
-            if (!productId) throw new Error('No se pudo obtener el ID del producto creado');
+            if (!productId) throw new Error('No se pudo obtener el ID del artículo creado');
         } else {
-            const updRes = await apiFetch(`/products/${productId}`, { method: 'PUT', body: JSON.stringify({ flavor_name: sabor, sale_price: price, yield_per_batch: yld, min_stock: minStock }) });
+            const updRes = await apiFetch(`/products/${productId}`, { method: 'PUT', body: JSON.stringify({ flavor_name: sabor, sale_price: price, yield_per_batch: yld, min_stock: minStock, article_type: articleType }) });
             if (!updRes.ok) {
-                let errMsg = 'Error al actualizar el producto';
+                let errMsg = 'Error al actualizar el artículo';
                 try { const errData = await updRes.json(); errMsg = errData.detail || errMsg; } catch(_) {}
                 throw new Error(errMsg);
             }
         }
-        const items = [];
-        for (const row of document.querySelectorAll('.esc-row')) {
-            const name = row.querySelector('.esc-item-name').value.trim(); const qty = parseFloat(row.querySelector('.esc-item-qty').value);
-            if (!name || isNaN(qty)) continue;
-            let ing = allIngredients.find(i => i.name.toLowerCase() === name.toLowerCase());
-            if (!ing) {
-                const ingRes = await apiFetch('/ingredients', { method: 'POST', body: JSON.stringify({ name: name.toUpperCase() }) });
-                if (!ingRes.ok) { console.warn('Error creando ingrediente:', name); continue; }
-                await loadIngredientsCache(); ing = allIngredients.find(i => i.name.toLowerCase() === name.toLowerCase());
+        let recipeOk = true;
+        if (!isSimple) {
+            const items = [];
+            for (const row of document.querySelectorAll('.esc-row')) {
+                const name = row.querySelector('.esc-item-name').value.trim(); const qty = parseFloat(row.querySelector('.esc-item-qty').value);
+                if (!name || isNaN(qty)) continue;
+                let ing = allIngredients.find(i => i.name.toLowerCase() === name.toLowerCase());
+                if (!ing) {
+                    const ingRes = await apiFetch('/ingredients', { method: 'POST', body: JSON.stringify({ name: name.toUpperCase() }) });
+                    if (!ingRes.ok) { console.warn('Error creando ingrediente:', name); continue; }
+                    await loadIngredientsCache(); ing = allIngredients.find(i => i.name.toLowerCase() === name.toLowerCase());
+                }
+                if (ing) items.push({ ingredient_id: ing.id, quantity: qty });
             }
-            if (ing) items.push({ ingredient_id: ing.id, quantity: qty });
+            const res = await apiFetch('/recipes', { method: 'POST', body: JSON.stringify({ product_id: productId, yield_per_batch: yld, items }) });
+            recipeOk = res.ok;
+            if (!recipeOk) {
+                let errMsg = 'Error al guardar la receta';
+                try { const errData = await res.json(); errMsg = errData.detail || errMsg; } catch(_) {}
+                const m = document.getElementById('esc-msg'); m.textContent = errMsg; m.className = 'error-msg'; setTimeout(() => m.textContent = '', 5000);
+                submitBtn.disabled = false; submitBtn.innerHTML = originalHtml;
+                return;
+            }
         }
-        const res = await apiFetch('/recipes', { method: 'POST', body: JSON.stringify({ product_id: productId, yield_per_batch: yld, items }) });
-        if (res.ok) {
+        if (recipeOk) {
             submitBtn.style.background = 'var(--positive)'; submitBtn.style.color = 'white';
-            submitBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:1.1rem;vertical-align:middle;">check</span> ¡PRODUCTO GUARDADO!';
+            submitBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:1.1rem;vertical-align:middle;">check</span> ¡ARTÍCULO GUARDADO!';
             setTimeout(() => {
                 submitBtn.disabled = false; submitBtn.style.background = ''; submitBtn.style.color = ''; submitBtn.innerHTML = originalHtml;
-                e.target.reset(); escCont.innerHTML = ''; addEscRow(); editingProductId = null; document.getElementById('cancel-edit-product-btn').style.display = 'none'; loadEscandalloTable();
-                const m = document.getElementById('esc-msg'); m.textContent = 'PRODUCTO GUARDADO'; m.className = 'success-msg'; setTimeout(() => m.textContent = '', 3000);
+                e.target.reset(); escCont.innerHTML = ''; addEscRow(); editingProductId = null; setArticleType('FORMULA'); document.getElementById('cancel-edit-product-btn').style.display = 'none'; loadEscandalloTable();
+                const m = document.getElementById('esc-msg'); m.textContent = 'ARTÍCULO GUARDADO'; m.className = 'success-msg'; setTimeout(() => m.textContent = '', 3000);
             }, 1500);
-        } else {
-            let errMsg = 'Error al guardar la receta';
-            try { const errData = await res.json(); errMsg = errData.detail || errMsg; } catch(_) {}
-            const m = document.getElementById('esc-msg'); m.textContent = errMsg; m.className = 'error-msg'; setTimeout(() => m.textContent = '', 5000);
-            submitBtn.disabled = false; submitBtn.innerHTML = originalHtml;
         }
     } catch (err) {
         const m = document.getElementById('esc-msg'); m.textContent = err.message || 'Error inesperado'; m.className = 'error-msg'; setTimeout(() => m.textContent = '', 5000);
@@ -570,7 +607,7 @@ async function loadSalesHistory() {
 async function viewSaleDetails(id) {
     const res = await apiFetch(`/sales/${id}/items`); const items = await res.json();
     document.getElementById('modal-title').textContent = `DETALLE DE VENTA #${id}`;
-    document.getElementById('modal-body').innerHTML = `<table class="data-table"><thead><tr><th>Producto</th><th>Cant.</th><th>Precio</th><th>GPU (Unit)</th><th>GPV (Total)</th></tr></thead><tbody>${items.map(i => `<tr><td>${i.product}</td><td>${i.quantity}</td><td>$${i.unit_price.toFixed(2)}</td><td>$${i.gpu.toFixed(2)}</td><td>$${(i.gpu * i.quantity).toFixed(2)}</td></tr>`).join('')}</tbody></table>`;
+    document.getElementById('modal-body').innerHTML = `<table class="data-table"><thead><tr><th>Producto</th><th>Cant.</th><th>Precio</th><th>COGS (Unit)</th><th>COGS (Total)</th></tr></thead><tbody>${items.map(i => `<tr><td>${i.product}</td><td>${i.quantity}</td><td>$${i.unit_price.toFixed(2)}</td><td>$${i.gpu.toFixed(2)}</td><td>$${(i.gpu * i.quantity).toFixed(2)}</td></tr>`).join('')}</tbody></table>`;
     document.getElementById('detail-modal').style.display = 'block';
 }
 async function deleteSale(id) { if (confirm('¿ELIMINAR ESTA VENTA? EL STOCK SERÁ DEVUELTO.')) { await apiFetch(`/sales/${id}`, { method: 'DELETE' }); loadSalesHistory(); } }
