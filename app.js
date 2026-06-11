@@ -543,7 +543,9 @@ document.getElementById('escandallo-form').addEventListener('submit', async (e) 
         submitBtn.disabled = false; submitBtn.innerHTML = originalHtml;
     }
 });
+let _pendingProductEdit = null;
 function viewProduct(id, name, price, yld, minStock, articleType) {
+    _pendingProductEdit = { id, name, price, yld, minStock, articleType };
     const typeLabel = articleType === 'SIMPLE' ? 'SIMPLE (reventa)' : 'FÓRMULA (fabricado)';
     document.getElementById('modal-title').textContent = name;
     document.getElementById('modal-body').innerHTML = `
@@ -554,7 +556,7 @@ function viewProduct(id, name, price, yld, minStock, articleType) {
             <tr><td style="color:var(--text-muted);">STOCK MÍNIMO</td><td>${minStock > 0 ? minStock + ' u.' : '-'}</td></tr>
         </tbody></table>
         <div style="display:flex;gap:10px;margin-top:20px;border-top:1px solid var(--surface-border);padding-top:16px;">
-            <button class="btn secondary outline" style="flex:1;" onclick="closeModal();editProduct(${id},'${name}',${price},${yld},${minStock},'${articleType}')"><span class="material-symbols-outlined" style="font-size:1rem;vertical-align:middle;">edit</span> EDITAR</button>
+            <button class="btn secondary outline" style="flex:1;" onclick="closeModal();if(_pendingProductEdit){const p=_pendingProductEdit;editProduct(p.id,p.name,p.price,p.yld,p.minStock,p.articleType);}"><span class="material-symbols-outlined" style="font-size:1rem;vertical-align:middle;">edit</span> EDITAR</button>
             <button class="btn" style="flex:1;background:var(--negative);color:white;" onclick="deleteProduct(${id})"><span class="material-symbols-outlined" style="font-size:1rem;vertical-align:middle;">delete</span> ELIMINAR</button>
         </div>`;
     document.getElementById('detail-modal').style.display = 'block';
@@ -629,21 +631,23 @@ document.getElementById('sale-form').addEventListener('submit', async (e) => {
 });
 async function loadSalesHistory() {
     const res = await apiFetch('/sales'); const data = await res.json();
-    document.getElementById('sales-history-tbody').innerHTML = data.map(s => `<tr><td>${s.date.replace('T', ' ')}</td><td><strong>${s.client}</strong></td><td>${s.discount}</td><td><strong>$${s.total.toFixed(2)}</strong></td><td><span class="tag tag-red">$${s.gpu ? s.gpu.toFixed(2) : '0.00'}</span></td><td><button class="btn secondary outline btn-icon" onclick="viewSaleDetails(${s.id},'${(s.client||'').replace(/'/g,'')}',${ s.total},${s.discount})" title="Ver"><span class="material-symbols-outlined">visibility</span></button></td></tr>`).join('');
+    document.getElementById('sales-history-tbody').innerHTML = data.map(s => `<tr><td>${s.date.replace('T', ' ')}</td><td><strong>${s.client}</strong></td><td>${s.discount}</td><td><strong>$${s.total.toFixed(2)}</strong></td><td><span class="tag tag-red">$${s.gpu ? s.gpu.toFixed(2) : '0.00'}</span></td><td><button class="btn secondary outline btn-icon" onclick="viewSaleDetails(${s.id})" title="Ver"><span class="material-symbols-outlined">visibility</span></button></td></tr>`).join('');
 }
-let _editingSaleId = null;
-async function viewSaleDetails(id, client, total, discount) {
-    const res = await apiFetch(`/sales/${id}/items`); const items = await res.json();
+async function viewSaleDetails(id) {
+    const [salesRes, itemsRes] = await Promise.all([apiFetch('/sales'), apiFetch(`/sales/${id}/items`)]);
+    const allSales = await salesRes.json(); const items = await itemsRes.json();
+    const sale = allSales.find(s => s.id === id) || {};
+    const clientName = (sale.client || '').replace(/"/g, '&quot;');
     document.getElementById('modal-title').textContent = `VENTA #${id}`;
     document.getElementById('modal-body').innerHTML = `
         <table class="data-table"><thead><tr><th>Producto</th><th>Cant.</th><th>Precio</th><th>COGS (Unit)</th><th>COGS (Total)</th></tr></thead>
         <tbody>${items.map(i => `<tr><td>${i.product}</td><td>${i.quantity}</td><td>$${i.unit_price.toFixed(2)}</td><td>$${i.gpu.toFixed(2)}</td><td>$${(i.gpu * i.quantity).toFixed(2)}</td></tr>`).join('')}</tbody></table>
         <div id="sale-edit-form" style="display:none;margin-top:16px;border-top:1px solid var(--surface-border);padding-top:16px;">
-            <div class="form-row"><div class="input-group"><label>CLIENTE</label><input id="modal-sale-client" type="text" value="${client}"></div><div class="input-group"><label>DESCUENTO ($)</label><input id="modal-sale-discount" type="number" step="0.01" value="0"></div></div>
+            <div class="form-row"><div class="input-group"><label>CLIENTE</label><input id="modal-sale-client" type="text" value="${clientName}"></div><div class="input-group"><label>DESCUENTO ($)</label><input id="modal-sale-discount" type="number" step="0.01" value="0"></div></div>
             <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;"><button class="btn secondary outline" onclick="document.getElementById('sale-edit-form').style.display='none'">CANCELAR</button><button class="btn primary" onclick="saveSaleEdit(${id})">GUARDAR CAMBIOS</button></div>
         </div>
         <div style="display:flex;gap:10px;margin-top:20px;border-top:1px solid var(--surface-border);padding-top:16px;">
-            <button class="btn secondary outline" style="flex:1;" onclick="document.getElementById('sale-edit-form').style.display=document.getElementById('sale-edit-form').style.display==='none'?'block':'none'"><span class="material-symbols-outlined" style="font-size:1rem;vertical-align:middle;">edit</span> EDITAR</button>
+            <button class="btn secondary outline" style="flex:1;" onclick="document.getElementById('sale-edit-form').style.display==='none'?document.getElementById('sale-edit-form').style.display='block':document.getElementById('sale-edit-form').style.display='none'"><span class="material-symbols-outlined" style="font-size:1rem;vertical-align:middle;">edit</span> EDITAR</button>
             <button class="btn" style="flex:1;background:var(--negative);color:white;" onclick="deleteSale(${id})"><span class="material-symbols-outlined" style="font-size:1rem;vertical-align:middle;">delete</span> ELIMINAR</button>
         </div>`;
     document.getElementById('detail-modal').style.display = 'block';

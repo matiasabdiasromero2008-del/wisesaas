@@ -139,7 +139,13 @@ def init_db():
         conn.commit()
     except Exception:
         conn.rollback()
-    # Agregar constraint único si no existe (para instancias ya creadas)
+    # Eliminar constraint único global (era single-tenant)
+    try:
+        cursor.execute("ALTER TABLE ingredients DROP CONSTRAINT IF EXISTS ingredients_name_key;")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+    # Agregar constraint único compuesto (por tenant) si no existe
     try:
         cursor.execute("ALTER TABLE ingredients ADD CONSTRAINT ingredients_name_tenant_unique UNIQUE(name, tenant_id);")
         conn.commit()
