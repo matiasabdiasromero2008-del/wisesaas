@@ -39,15 +39,9 @@
     <div id="login-view" class="view active">
         <div class="login-card glass">
             <div class="wise-logo-container" style="margin-bottom:24px;">
-                <svg viewBox="0 0 500 122" class="wise-logo-svg" xmlns="http://www.w3.org/2000/svg">
-                    <g class="wise-logo-group">
-                        <!-- W: 3 blades, increasing height, leaning right, gaps between them -->
-                        <polygon points="10,117 46,117 59,52 23,52" fill="var(--logo-color)" />
-                        <polygon points="56,117 96,117 113,22 73,22" fill="var(--logo-color)" />
-                        <polygon points="106,117 152,117 173,5 127,5" fill="var(--logo-color)" />
-                        <text x="183" y="117" fill="var(--logo-color)" font-family="'Outfit', sans-serif" font-weight="800" font-size="150" letter-spacing="-4">ISE</text>
-                    </g>
-                </svg>
+                <img src="/static/logo-dark.png" alt="WISE" class="wise-logo-svg wise-logo-img-dark" onerror="this.style.display='none';this.parentElement.querySelector('.wise-logo-fallback').style.display='block';">
+                <img src="/static/logo-light.png" alt="WISE" class="wise-logo-svg wise-logo-img-light" onerror="this.style.display='none';this.parentElement.querySelector('.wise-logo-fallback').style.display='block';">
+                <span class="wise-logo-fallback" style="display:none;font-size:2rem;font-weight:800;letter-spacing:1px;color:var(--logo-color);">WISE</span>
             </div>
             <p style="color:var(--text-muted);margin-bottom:28px;text-align:center;">Sistema de Gestión de Rentabilidad</p>
             <form id="login-form">
