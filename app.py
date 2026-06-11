@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -670,8 +673,10 @@ def add_provider(req: ProviderModel, user: dict = Depends(get_current_user)):
         conn.commit()
         return {"success": True}
     except HTTPException:
+        conn.rollback()
         raise
     except Exception as e:
+        conn.rollback()
         raise HTTPException(status_code=400, detail=str(e))
     finally:
         conn.close()
@@ -773,6 +778,7 @@ def add_ingredient(req: IngredientModel, user: dict = Depends(get_current_user))
         conn.commit()
         return {"success": True}
     except Exception as e:
+        conn.rollback()
         raise HTTPException(status_code=400, detail=str(e))
     finally:
         conn.close()
@@ -801,11 +807,13 @@ def add_product(req: ProductModel, user: dict = Depends(get_current_user)):
     try:
         cursor.execute("""
             INSERT INTO products (flavor_name, sale_price, yield_per_batch, min_stock, tenant_id)
-            VALUES (%s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s) RETURNING id
         """, (req.flavor_name, req.sale_price, req.yield_per_batch, req.min_stock or 0, tenant_id))
+        new_id = cursor.fetchone()[0]
         conn.commit()
-        return {"success": True}
+        return {"success": True, "id": new_id}
     except Exception as e:
+        conn.rollback()
         raise HTTPException(status_code=400, detail=str(e))
     finally:
         conn.close()

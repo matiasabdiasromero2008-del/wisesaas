@@ -424,18 +424,33 @@ document.getElementById('escandallo-form').addEventListener('submit', async (e) 
     let productId = editingProductId;
     try {
         if (!productId) {
-            await apiFetch('/products', { method: 'POST', body: JSON.stringify({ flavor_name: sabor, sale_price: price, yield_per_batch: yld, min_stock: minStock }) });
-            const prods = await (await apiFetch('/products')).json();
-            productId = prods.find(p => p.name.toLowerCase() === sabor.toLowerCase())?.id;
+            const createRes = await apiFetch('/products', { method: 'POST', body: JSON.stringify({ flavor_name: sabor, sale_price: price, yield_per_batch: yld, min_stock: minStock }) });
+            if (!createRes.ok) {
+                let errMsg = 'Error al crear el producto';
+                try { const errData = await createRes.json(); errMsg = errData.detail || errMsg; } catch(_) {}
+                throw new Error(errMsg);
+            }
+            const createData = await createRes.json();
+            productId = createData.id;
+            if (!productId) throw new Error('No se pudo obtener el ID del producto creado');
         } else {
-            await apiFetch(`/products/${productId}`, { method: 'PUT', body: JSON.stringify({ flavor_name: sabor, sale_price: price, yield_per_batch: yld, min_stock: minStock }) });
+            const updRes = await apiFetch(`/products/${productId}`, { method: 'PUT', body: JSON.stringify({ flavor_name: sabor, sale_price: price, yield_per_batch: yld, min_stock: minStock }) });
+            if (!updRes.ok) {
+                let errMsg = 'Error al actualizar el producto';
+                try { const errData = await updRes.json(); errMsg = errData.detail || errMsg; } catch(_) {}
+                throw new Error(errMsg);
+            }
         }
         const items = [];
         for (const row of document.querySelectorAll('.esc-row')) {
             const name = row.querySelector('.esc-item-name').value.trim(); const qty = parseFloat(row.querySelector('.esc-item-qty').value);
             if (!name || isNaN(qty)) continue;
             let ing = allIngredients.find(i => i.name.toLowerCase() === name.toLowerCase());
-            if (!ing) { await apiFetch('/ingredients', { method: 'POST', body: JSON.stringify({ name: name.toUpperCase() }) }); await loadIngredientsCache(); ing = allIngredients.find(i => i.name.toLowerCase() === name.toLowerCase()); }
+            if (!ing) {
+                const ingRes = await apiFetch('/ingredients', { method: 'POST', body: JSON.stringify({ name: name.toUpperCase() }) });
+                if (!ingRes.ok) { console.warn('Error creando ingrediente:', name); continue; }
+                await loadIngredientsCache(); ing = allIngredients.find(i => i.name.toLowerCase() === name.toLowerCase());
+            }
             if (ing) items.push({ ingredient_id: ing.id, quantity: qty });
         }
         const res = await apiFetch('/recipes', { method: 'POST', body: JSON.stringify({ product_id: productId, yield_per_batch: yld, items }) });
@@ -447,8 +462,16 @@ document.getElementById('escandallo-form').addEventListener('submit', async (e) 
                 e.target.reset(); escCont.innerHTML = ''; addEscRow(); editingProductId = null; document.getElementById('cancel-edit-product-btn').style.display = 'none'; loadEscandalloTable();
                 const m = document.getElementById('esc-msg'); m.textContent = 'PRODUCTO GUARDADO'; m.className = 'success-msg'; setTimeout(() => m.textContent = '', 3000);
             }, 1500);
-        } else { submitBtn.disabled = false; submitBtn.innerHTML = originalHtml; }
-    } catch (err) { submitBtn.disabled = false; submitBtn.innerHTML = originalHtml; }
+        } else {
+            let errMsg = 'Error al guardar la receta';
+            try { const errData = await res.json(); errMsg = errData.detail || errMsg; } catch(_) {}
+            const m = document.getElementById('esc-msg'); m.textContent = errMsg; m.className = 'error-msg'; setTimeout(() => m.textContent = '', 5000);
+            submitBtn.disabled = false; submitBtn.innerHTML = originalHtml;
+        }
+    } catch (err) {
+        const m = document.getElementById('esc-msg'); m.textContent = err.message || 'Error inesperado'; m.className = 'error-msg'; setTimeout(() => m.textContent = '', 5000);
+        submitBtn.disabled = false; submitBtn.innerHTML = originalHtml;
+    }
 });
 async function deleteProduct(id) {
     if (confirm('¿ELIMINAR ESTE PRODUCTO?')) {
@@ -667,9 +690,31 @@ async function loadProviders() {
 }
 document.getElementById('provider-form').addEventListener('submit', async (e) => {
     e.preventDefault();
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const originalHtml = submitBtn.innerHTML;
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="material-symbols-outlined animate-spin" style="font-size:1.1rem;vertical-align:middle;">sync</span> GUARDANDO...';
     const payload = { name: document.getElementById('prov-name').value.trim(), category_name: document.getElementById('prov-cat').value };
-    const res = await apiFetch('/providers', { method: 'POST', body: JSON.stringify(payload) });
-    if (res.ok) { e.target.reset(); loadProviders(); const m = document.getElementById('prov-msg'); m.textContent = 'PROVEEDOR GUARDADO'; m.className = 'success-msg'; setTimeout(() => m.textContent = '', 3000); }
+    try {
+        const res = await apiFetch('/providers', { method: 'POST', body: JSON.stringify(payload) });
+        if (res.ok) {
+            submitBtn.style.background = 'var(--positive)'; submitBtn.style.color = 'white';
+            submitBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:1.1rem;vertical-align:middle;">check</span> ¡PROVEEDOR GUARDADO!';
+            setTimeout(() => {
+                submitBtn.disabled = false; submitBtn.style.background = ''; submitBtn.style.color = ''; submitBtn.innerHTML = originalHtml;
+                e.target.reset(); loadProviders();
+                const m = document.getElementById('prov-msg'); m.textContent = 'PROVEEDOR GUARDADO'; m.className = 'success-msg'; setTimeout(() => m.textContent = '', 3000);
+            }, 1500);
+        } else {
+            let errMsg = 'Error al guardar el proveedor';
+            try { const errData = await res.json(); errMsg = errData.detail || errMsg; } catch(_) {}
+            const m = document.getElementById('prov-msg'); m.textContent = errMsg; m.className = 'error-msg'; setTimeout(() => m.textContent = '', 5000);
+            submitBtn.disabled = false; submitBtn.innerHTML = originalHtml;
+        }
+    } catch (err) {
+        const m = document.getElementById('prov-msg'); m.textContent = err.message || 'Error inesperado'; m.className = 'error-msg'; setTimeout(() => m.textContent = '', 5000);
+        submitBtn.disabled = false; submitBtn.innerHTML = originalHtml;
+    }
 });
 async function deleteProvider(id) { if (confirm('¿ELIMINAR ESTE PROVEEDOR?')) { await apiFetch(`/providers/${id}`, { method: 'DELETE' }); loadProviders(); } }
 
