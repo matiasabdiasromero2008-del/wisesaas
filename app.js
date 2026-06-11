@@ -325,20 +325,34 @@ async function loadUsers() {
 
 document.getElementById('create-user-form').addEventListener('submit', async (e) => {
     e.preventDefault();
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const originalHtml = submitBtn.innerHTML;
     const m = document.getElementById('create-user-msg');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="material-symbols-outlined animate-spin" style="font-size:1.1rem;vertical-align:middle;">sync</span> CREANDO...';
     const payload = {
         username: document.getElementById('new-user-username').value.trim(),
         email: document.getElementById('new-user-email').value.trim(),
         role: document.getElementById('new-user-role').value,
     };
-    m.textContent = 'Creando usuario...'; m.className = '';
-    const res = await apiFetch('/users', { method: 'POST', body: JSON.stringify(payload) });
-    if (res.ok) {
-        const data = await res.json();
-        m.textContent = data.message; m.className = 'success-msg';
-        e.target.reset(); loadUsers();
-    } else {
-        const d = await res.json(); m.textContent = d.detail || 'Error al crear'; m.className = 'error-msg';
+    try {
+        const res = await apiFetch('/users', { method: 'POST', body: JSON.stringify(payload) });
+        if (res.ok) {
+            const data = await res.json();
+            submitBtn.style.background = 'var(--positive)'; submitBtn.style.color = 'white';
+            submitBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:1.1rem;vertical-align:middle;">check</span> ¡USUARIO CREADO!';
+            m.textContent = data.message; m.className = 'success-msg';
+            setTimeout(() => {
+                submitBtn.disabled = false; submitBtn.style.background = ''; submitBtn.style.color = ''; submitBtn.innerHTML = originalHtml;
+                e.target.reset(); loadUsers(); setTimeout(() => m.textContent = '', 5000);
+            }, 1500);
+        } else {
+            const d = await res.json(); m.textContent = d.detail || 'Error al crear'; m.className = 'error-msg';
+            submitBtn.disabled = false; submitBtn.innerHTML = originalHtml;
+        }
+    } catch(err) {
+        m.textContent = 'Error de conexión. Intentá de nuevo.'; m.className = 'error-msg';
+        submitBtn.disabled = false; submitBtn.innerHTML = originalHtml;
     }
 });
 
@@ -357,15 +371,23 @@ async function loadIngredientsCache() {
 }
 
 async function loadEscandalloTable() {
-    const res = await apiFetch('/products');
-    const products = await res.json();
-    const tbody = document.getElementById('escandallo-tbody'); tbody.innerHTML = '';
-    for (const prod of products) {
-        const ingRes = await apiFetch(`/recipes/${prod.id}`);
-        const ingredients = await ingRes.json();
-        const ingHtml = ingredients.map(ing => `<tr class="ingredient-row row-prod-${prod.id}"><td></td><td style="padding-left:30px;color:var(--text-muted);"><span class="material-symbols-outlined" style="font-size:1rem;vertical-align:middle;">subdirectory_arrow_right</span> ${ing.name}</td><td colspan="3" class="text-muted">Cant: ${ing.quantity}</td><td colspan="2" class="text-muted">$${(ing.quantity * ing.cost).toFixed(2)}</td></tr>`).join('');
-        const minStockText = (prod.min_stock && prod.min_stock > 0) ? `${prod.min_stock} u.` : '-';
-        tbody.innerHTML += `<tr class="group-header"><td style="text-align:center;">${ingredients.length > 0 ? `<span class="material-symbols-outlined toggle-btn" onclick="toggleIng(${prod.id},this)">expand_more</span>` : ''}</td><td><strong>${prod.name}</strong></td><td>${prod.yield || 1}</td><td style="text-align:center; font-weight: 600;">${minStockText}</td><td>$${prod.price.toFixed(2)}</td><td><strong style="color:var(--primary);">$${prod.gpu.toFixed(2)}</strong></td><td style="white-space:nowrap;"><button class="btn secondary outline btn-icon" onclick="editProduct(${prod.id},'${prod.name}',${prod.price},${prod.yield || 1},${prod.min_stock || 0})" title="Editar"><span class="material-symbols-outlined">edit</span></button> <button class="btn secondary outline btn-icon" onclick="deleteProduct(${prod.id})" title="Eliminar"><span class="material-symbols-outlined">delete</span></button></td></tr>${ingHtml}`;
+    const tbody = document.getElementById('escandallo-tbody');
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:20px;"><span class="material-symbols-outlined animate-spin" style="vertical-align:middle;">sync</span> Cargando productos...</td></tr>`;
+    try {
+        const res = await apiFetch('/products');
+        if (!res.ok) throw new Error('Error al cargar productos');
+        const products = await res.json();
+        tbody.innerHTML = '';
+        if (products.length === 0) { tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:20px;">No hay productos creados todavía.</td></tr>`; return; }
+        for (const prod of products) {
+            let ingredients = [];
+            try { const ingRes = await apiFetch(`/recipes/${prod.id}`); if (ingRes.ok) ingredients = await ingRes.json(); } catch(_) {}
+            const ingHtml = ingredients.map(ing => `<tr class="ingredient-row row-prod-${prod.id}"><td></td><td style="padding-left:30px;color:var(--text-muted);"><span class="material-symbols-outlined" style="font-size:1rem;vertical-align:middle;">subdirectory_arrow_right</span> ${ing.name}</td><td colspan="3" class="text-muted">Cant: ${ing.quantity}</td><td colspan="2" class="text-muted">$${(ing.quantity * ing.cost).toFixed(2)}</td></tr>`).join('');
+            const minStockText = (prod.min_stock && prod.min_stock > 0) ? `${prod.min_stock} u.` : '-';
+            tbody.innerHTML += `<tr class="group-header"><td style="text-align:center;">${ingredients.length > 0 ? `<span class="material-symbols-outlined toggle-btn" onclick="toggleIng(${prod.id},this)">expand_more</span>` : ''}</td><td><strong>${prod.name}</strong></td><td>${prod.yield || 1}</td><td style="text-align:center; font-weight: 600;">${minStockText}</td><td>$${prod.price.toFixed(2)}</td><td><strong style="color:var(--primary);">$${prod.gpu.toFixed(2)}</strong></td><td style="white-space:nowrap;"><button class="btn secondary outline btn-icon" onclick="editProduct(${prod.id},'${prod.name}',${prod.price},${prod.yield || 1},${prod.min_stock || 0})" title="Editar"><span class="material-symbols-outlined">edit</span></button> <button class="btn secondary outline btn-icon" onclick="deleteProduct(${prod.id})" title="Eliminar"><span class="material-symbols-outlined">delete</span></button></td></tr>${ingHtml}`;
+        }
+    } catch(err) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--negative);padding:20px;">Error al cargar la tabla. Recargá la página.</td></tr>`;
     }
 }
 
@@ -672,11 +694,31 @@ async function loadClients() {
 }
 document.getElementById('client-form').addEventListener('submit', async (e) => {
     e.preventDefault();
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const originalHtml = submitBtn.innerHTML;
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="material-symbols-outlined animate-spin" style="font-size:1.1rem;vertical-align:middle;">sync</span> GUARDANDO...';
     const payload = { name: document.getElementById('client-name').value.trim(), phone: document.getElementById('client-phone').value.trim() || null };
     let url = '/clients', method = 'POST';
     if (editingClientId) { url = `/clients/${editingClientId}`; method = 'PUT'; }
-    const res = await apiFetch(url, { method, body: JSON.stringify(payload) });
-    if (res.ok) { e.target.reset(); editingClientId = null; document.getElementById('cancel-edit-client-btn').style.display = 'none'; loadClients(); }
+    try {
+        const res = await apiFetch(url, { method, body: JSON.stringify(payload) });
+        if (res.ok) {
+            submitBtn.style.background = 'var(--positive)'; submitBtn.style.color = 'white';
+            submitBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:1.1rem;vertical-align:middle;">check</span> ¡GUARDADO!';
+            setTimeout(() => {
+                submitBtn.disabled = false; submitBtn.style.background = ''; submitBtn.style.color = ''; submitBtn.innerHTML = originalHtml;
+                e.target.reset(); editingClientId = null; document.getElementById('cancel-edit-client-btn').style.display = 'none'; loadClients();
+            }, 1500);
+        } else {
+            const d = await res.json();
+            alert(d.detail || 'Error al guardar el cliente');
+            submitBtn.disabled = false; submitBtn.innerHTML = originalHtml;
+        }
+    } catch(err) {
+        alert('Error de conexión. Intentá de nuevo.');
+        submitBtn.disabled = false; submitBtn.innerHTML = originalHtml;
+    }
 });
 let editingClientId = null;
 function editClient(id, name, phone) { editingClientId = id; document.getElementById('client-name').value = name; document.getElementById('client-phone').value = phone || ''; document.getElementById('cancel-edit-client-btn').style.display = 'inline-flex'; window.scrollTo({ top: 0, behavior: 'smooth' }); }
@@ -685,8 +727,17 @@ async function deleteClient(id) { if (confirm('¿ELIMINAR ESTE CLIENTE?')) { awa
 
 // ─── PROVEEDORES ──────────────────────────────────────────────────────────────
 async function loadProviders() {
-    const res = await apiFetch('/providers'); allProviders = await res.json();
-    document.getElementById('providers-tbody').innerHTML = allProviders.map(p => `<tr><td>${p.name}</td><td>${p.category}</td><td style="white-space:nowrap;"><button class="btn secondary outline btn-icon" onclick="deleteProvider(${p.id})" title="Eliminar"><span class="material-symbols-outlined">delete</span></button></td></tr>`).join('');
+    const tbody = document.getElementById('providers-tbody');
+    try {
+        const res = await apiFetch('/providers');
+        if (!res.ok) throw new Error('Error al cargar proveedores');
+        allProviders = await res.json();
+        tbody.innerHTML = allProviders.length === 0
+            ? `<tr><td colspan="3" style="text-align:center;color:var(--text-muted);padding:20px;">No hay proveedores cargados todavía.</td></tr>`
+            : allProviders.map(p => `<tr><td>${p.name}</td><td>${p.category}</td><td style="white-space:nowrap;"><button class="btn secondary outline btn-icon" onclick="deleteProvider(${p.id})" title="Eliminar"><span class="material-symbols-outlined">delete</span></button></td></tr>`).join('');
+    } catch(err) {
+        if (tbody) tbody.innerHTML = `<tr><td colspan="3" style="text-align:center;color:var(--negative);padding:20px;">Error al cargar. Recargá la página.</td></tr>`;
+    }
 }
 document.getElementById('provider-form').addEventListener('submit', async (e) => {
     e.preventDefault();
