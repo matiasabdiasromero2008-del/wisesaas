@@ -128,12 +128,8 @@ body {
 .login-card .wise-logo-svg {
     max-width: 240px;
 }
-/* Logo: imagen según tema (logo-dark para fondo oscuro, logo-light para fondo claro) */
-/* mix-blend-mode funde el fondo sólido del JPEG con el fondo de la app:
-   screen → el navy oscuro desaparece sobre fondos oscuros (queda el logo blanco)
-   multiply → el blanco desaparece sobre fondos claros (queda el logo azul) */
-.wise-logo-img-dark { mix-blend-mode: screen; }
-.wise-logo-img-light { display: none; mix-blend-mode: multiply; }
+/* Logo: imagen según tema (logo-dark.png blanco para fondo oscuro, logo-light.png azul para fondo claro) */
+.wise-logo-img-light { display: none; }
 [data-theme='light'] .wise-logo-img-dark { display: none; }
 [data-theme='light'] .wise-logo-img-light { display: block; }
 
