@@ -143,7 +143,7 @@
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
                         <h3 style="margin:0;">NUEVA CUENTA CONVENCIONAL</h3>
                     </div>
-                    <form id="create-tenant-form">
+                    <form id="create-tenant-form" autocomplete="off">
                         <div class="form-row">
                             <div class="input-group">
                                 <label>USUARIO</label>
@@ -313,7 +313,7 @@
                             <span class="material-symbols-outlined" style="font-size:1rem;">close</span> CANCELAR EDICIÓN
                         </button>
                     </div>
-                    <form id="sale-form">
+                    <form id="sale-form" autocomplete="off">
                         <div class="form-row">
                             <div class="input-group" style="flex:2"><label>CLIENTE</label><select id="sale-client" required></select></div>
                             <div class="input-group"><label>DESCUENTO</label><div style="display: flex; gap: 8px;"><input type="number" id="sale-discount" value="0" min="0" step="any" style="flex: 1; min-width: 0;"><select id="sale-discount-type" style="width: 75px; min-width: 75px; padding: 10px 8px;"><option value="percent">%</option><option value="fixed">$</option></select></div></div>
@@ -346,7 +346,7 @@
                         <h3 style="margin:0;">REGISTRO DE GASTOS</h3>
                         <button type="button" id="cancel-edit-expense-btn" class="btn secondary outline" style="display:none;padding:6px 12px;font-size:0.8rem;"><span class="material-symbols-outlined" style="font-size:1rem;">close</span> CANCELAR EDICIÓN</button>
                     </div>
-                    <form id="expense-form">
+                    <form id="expense-form" autocomplete="off">
                         <div class="form-row">
                             <div class="input-group" style="flex:2;"><label>PROVEEDOR</label><select id="exp-prov" required></select></div>
                             <div class="input-group"><label>CATEGORÍA (SISTEMA)</label><select id="exp-cat" required></select></div>
@@ -379,10 +379,10 @@
                         <h3 style="margin:0;">REGISTRAR PRODUCCIÓN (INGRESOS)</h3>
                         <button type="button" id="cancel-edit-prodrun-btn" class="btn secondary outline" style="display:none;padding:6px 12px;font-size:0.8rem;"><span class="material-symbols-outlined" style="font-size:1rem;">close</span> CANCELAR EDICIÓN</button>
                     </div>
-                    <form id="prodrun-form">
+                    <form id="prodrun-form" autocomplete="off">
                         <div class="form-row">
                             <div class="input-group" style="flex:2;"><label>SABOR (PRODUCTO)</label><select id="prodrun-product" required></select></div>
-                            <div class="input-group"><label>UNIDADES (FRASCOS)</label><input type="number" id="prodrun-qty" required min="1"></div>
+                            <div class="input-group"><label>UNIDADES</label><input type="number" id="prodrun-qty" required min="1"></div>
                             <div class="input-group"><label>FECHA Y HORA</label><input type="datetime-local" id="prodrun-date" required></div>
                         </div>
                         <div style="display:flex;justify-content:flex-end;margin-top:20px;">
@@ -409,7 +409,7 @@
                         <h3 style="margin:0;">REGISTRAR NUEVO CLIENTE</h3>
                         <button type="button" id="cancel-edit-client-btn" class="btn secondary outline" style="display:none;padding:6px 12px;font-size:0.8rem;"><span class="material-symbols-outlined" style="font-size:1rem;">close</span> CANCELAR EDICIÓN</button>
                     </div>
-                    <form id="client-form">
+                    <form id="client-form" autocomplete="off">
                         <div class="form-row">
                             <div class="input-group" style="flex:2;"><label>NOMBRE DEL CLIENTE</label><input type="text" id="client-name" required></div>
                             <div class="input-group"><label>TELÉFONO</label><input type="tel" id="client-phone" placeholder="Ej: +54 11 1234-5678"></div>
@@ -433,11 +433,15 @@
             <section id="sec-proveedores" class="section">
                 <div class="card">
                     <h3>REGISTRAR NUEVO PROVEEDOR</h3>
-                    <form id="provider-form">
+                    <form id="provider-form" autocomplete="off">
                         <div class="form-row">
                             <div class="input-group"><label>NOMBRE DEL PROVEEDOR</label><input type="text" id="prov-name" required></div>
                             <div class="input-group"><label>CONCEPTO (CATEGORÍA)</label><select id="prov-cat" required></select></div>
                         </div>
+                        <label style="display:flex;align-items:center;gap:10px;margin:4px 0 16px;cursor:pointer;font-size:0.85rem;color:var(--text-muted);">
+                            <input type="checkbox" id="prov-is-resale" style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer;">
+                            <span><strong style="color:var(--text-main);">PROVEEDOR DE COMPRA/VENTA</strong> — le comprás artículos para revenderlos; los gastos con artículos SIMPLES cargan stock automáticamente</span>
+                        </label>
                         <button type="submit" class="btn primary"><span class="material-symbols-outlined">save</span> GUARDAR PROVEEDOR</button>
                         <div id="prov-msg"></div>
                     </form>
@@ -446,7 +450,7 @@
                     <h3>LISTA DE PROVEEDORES</h3>
                     <div class="table-container">
                         <table class="data-table">
-                            <thead><tr><th>NOMBRE</th><th>CATEGORÍA</th><th style="width:80px;">ACCIONES</th></tr></thead>
+                            <thead><tr><th>NOMBRE</th><th>CATEGORÍA</th><th>TIPO</th><th style="width:80px;">ACCIONES</th></tr></thead>
                             <tbody id="providers-tbody"></tbody>
                         </table>
                     </div>
@@ -460,14 +464,14 @@
                         <h3 style="margin:0;">GESTIÓN DE ARTÍCULOS</h3>
                         <button type="button" id="cancel-edit-product-btn" class="btn secondary outline" style="display:none;padding:6px 12px;font-size:0.8rem;"><span class="material-symbols-outlined" style="font-size:1rem;">close</span> CANCELAR EDICIÓN</button>
                     </div>
-                    <form id="escandallo-form">
+                    <form id="escandallo-form" autocomplete="off">
                         <!-- Selector de tipo de artículo -->
                         <div style="display:flex;gap:12px;margin-bottom:20px;">
                             <label style="flex:1;cursor:pointer;">
                                 <input type="radio" name="article-type-radio" id="esc-type-formula" value="FORMULA" checked style="display:none;">
                                 <div class="article-type-btn active" id="article-type-formula-btn" style="border:2px solid var(--primary);border-radius:10px;padding:12px 16px;text-align:center;transition:all 0.2s;">
-                                    <span class="material-symbols-outlined" style="font-size:1.4rem;display:block;margin-bottom:4px;">science</span>
-                                    <strong style="font-size:0.85rem;">ARTÍCULO FÓRMULA</strong>
+                                    <span class="material-symbols-outlined" style="font-size:1.4rem;display:block;margin-bottom:4px;">factory</span>
+                                    <strong style="font-size:0.85rem;">ARTÍCULO COMPUESTO</strong>
                                     <p style="font-size:0.72rem;color:var(--text-muted);margin:4px 0 0 0;">Lo fabricás vos con ingredientes</p>
                                 </div>
                             </label>
@@ -519,7 +523,7 @@
             <section id="sec-usuarios" class="section">
                 <div class="card" style="margin-bottom:20px;">
                     <h3 style="margin-bottom:20px;">CREAR NUEVO USUARIO</h3>
-                    <form id="create-user-form">
+                    <form id="create-user-form" autocomplete="off">
                         <div class="form-row">
                             <div class="input-group"><label>NOMBRE DE USUARIO</label><input type="text" id="new-user-username" required></div>
                             <div class="input-group" style="flex:2;"><label>CORREO ELECTRÓNICO</label><input type="email" id="new-user-email" required></div>

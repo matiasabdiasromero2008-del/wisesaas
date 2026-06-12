@@ -1,5 +1,36 @@
 from database import get_connection
 from datetime import datetime
+import unicodedata
+from difflib import SequenceMatcher
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Matching difuso de nombres (artículos vs descripciones de gasto)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _normalize_name(s: str) -> str:
+    """MAYÚSCULAS, sin tildes, espacios colapsados."""
+    s = unicodedata.normalize('NFD', s or '')
+    s = ''.join(ch for ch in s if unicodedata.category(ch) != 'Mn')
+    return ' '.join(s.upper().split())
+
+
+def names_match(a: str, b: str) -> bool:
+    """True si dos nombres refieren al mismo artículo aunque estén escritos distinto.
+    Tolera tildes, mayúsculas, plural simple, y errores menores de tipeo."""
+    na, nb = _normalize_name(a), _normalize_name(b)
+    if not na or not nb:
+        return False
+    if na == nb:
+        return True
+    # plural/singular simple: COCA COLAS == COCA COLA
+    if na.rstrip('S') == nb.rstrip('S'):
+        return True
+    # uno contiene al otro: "COCA COLA 1.5L" ~ "COCA COLA"
+    if len(na) >= 4 and len(nb) >= 4 and (na in nb or nb in na):
+        return True
+    # errores de tipeo menores
+    return SequenceMatcher(None, na, nb).ratio() >= 0.85
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -30,18 +61,20 @@ def recalculate_product_gpu(product_id: int, cursor):
     tenant_id = row[3]
 
     if article_type == 'SIMPLE':
-        # COGS = último precio unitario cargado en gastos con descripción igual al nombre del artículo
+        # COGS = último precio unitario de un gasto cuya descripción coincida (matching difuso)
         cursor.execute('''
-            SELECT ei.unit_price
+            SELECT ei.description, ei.unit_price
             FROM expense_items ei
             JOIN expenses e ON ei.expense_id = e.id
-            WHERE UPPER(TRIM(ei.description)) = UPPER(TRIM(%s))
-              AND e.tenant_id = %s
+            WHERE e.tenant_id = %s
             ORDER BY e.date DESC, e.id DESC
-            LIMIT 1
-        ''', (flavor_name, tenant_id))
-        cost_row = cursor.fetchone()
-        cogs = cost_row[0] if cost_row else 0
+            LIMIT 300
+        ''', (tenant_id,))
+        cogs = 0
+        for desc, unit_price in cursor.fetchall():
+            if names_match(desc, flavor_name):
+                cogs = unit_price or 0
+                break
         cursor.execute("UPDATE products SET current_gpu = %s WHERE id = %s", (cogs, product_id))
         return
 
@@ -104,6 +137,31 @@ def add_expense(provider: str, category_name: str, items_list: list, date_str: s
                 VALUES (%s, %s, %s)
                 ON CONFLICT (name, tenant_id) DO UPDATE SET last_unit_cost = EXCLUDED.last_unit_cost
             ''', (item['description'], item['unit_price'], tenant_id))
+
+    # ── Ingreso automático de stock para ARTÍCULOS SIMPLES ──
+    # Si la descripción del gasto coincide (matching difuso) con un artículo SIMPLE,
+    # la compra carga stock automáticamente y queda registrada como ingreso.
+    cursor.execute(
+        "SELECT id, flavor_name FROM products WHERE tenant_id = %s AND article_type = 'SIMPLE'",
+        (tenant_id,)
+    )
+    simple_products = cursor.fetchall()
+    for item in items_list:
+        for prod_id, prod_name in simple_products:
+            if names_match(item['description'], prod_name):
+                qty = int(item['quantity']) if item['quantity'] else 0
+                if qty > 0:
+                    cursor.execute('''
+                        INSERT INTO stock (product_id, quantity_remaining, tenant_id)
+                        VALUES (%s, %s, %s)
+                        ON CONFLICT (product_id, tenant_id)
+                        DO UPDATE SET quantity_remaining = stock.quantity_remaining + EXCLUDED.quantity_remaining
+                    ''', (prod_id, qty, tenant_id))
+                    cursor.execute('''
+                        INSERT INTO production_runs (product_id, quantity, date, tenant_id)
+                        VALUES (%s, %s, %s, %s)
+                    ''', (prod_id, qty, date_str, tenant_id))
+                break
 
     conn.commit()
 

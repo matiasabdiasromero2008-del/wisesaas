@@ -177,6 +177,7 @@ class ProviderModel(BaseModel):
     location: Optional[str] = None
     delivery_time: Optional[str] = None
     observations: Optional[str] = None
+    is_resale: Optional[bool] = False
 
 class IngredientModel(BaseModel):
     name: str
@@ -652,14 +653,14 @@ def get_providers(user: dict = Depends(get_current_user)):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT p.id, p.name, c.name, p.phone, p.location, p.delivery_time, p.observations
+        SELECT p.id, p.name, c.name, p.phone, p.location, p.delivery_time, p.observations, p.is_resale
         FROM providers p
         JOIN categories c ON p.category_id = c.id
         WHERE p.tenant_id = %s
     """, (tenant_id,))
     results = cursor.fetchall()
     conn.close()
-    return [{"id": r[0], "name": r[1], "category": r[2], "phone": r[3], "location": r[4], "delivery_time": r[5], "observations": r[6]} for r in results]
+    return [{"id": r[0], "name": r[1], "category": r[2], "phone": r[3], "location": r[4], "delivery_time": r[5], "observations": r[6], "is_resale": bool(r[7])} for r in results]
 
 
 @app.post("/providers")
@@ -673,9 +674,9 @@ def add_provider(req: ProviderModel, user: dict = Depends(get_current_user)):
         if not cat_id:
             raise HTTPException(status_code=400, detail="Categoría no encontrada")
         cursor.execute("""
-            INSERT INTO providers (name, category_id, phone, location, delivery_time, observations, tenant_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """, (req.name, cat_id[0], req.phone, req.location, req.delivery_time, req.observations, tenant_id))
+            INSERT INTO providers (name, category_id, phone, location, delivery_time, observations, is_resale, tenant_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """, (req.name, cat_id[0], req.phone, req.location, req.delivery_time, req.observations, bool(req.is_resale), tenant_id))
         conn.commit()
         return {"success": True}
     except HTTPException:
@@ -698,8 +699,8 @@ def update_provider(provider_id: int, req: ProviderModel, user: dict = Depends(g
         cat_row = cursor.fetchone()
         if not cat_row:
             raise HTTPException(status_code=400, detail="Categoría no encontrada")
-        cursor.execute("UPDATE providers SET name = %s, category_id = %s WHERE id = %s AND tenant_id = %s",
-                       (req.name, cat_row[0], provider_id, tenant_id))
+        cursor.execute("UPDATE providers SET name = %s, category_id = %s, phone = %s, location = %s, delivery_time = %s, observations = %s, is_resale = %s WHERE id = %s AND tenant_id = %s",
+                       (req.name, cat_row[0], req.phone, req.location, req.delivery_time, req.observations, bool(req.is_resale), provider_id, tenant_id))
         conn.commit()
         return {"success": True}
     except HTTPException:

@@ -145,6 +145,38 @@ def init_db():
         conn.commit()
     except Exception:
         conn.rollback()
+    # Deduplicar ingredientes (name, tenant_id): remapear recetas al canónico y borrar copias.
+    # Sin esto el ADD CONSTRAINT falla silenciosamente y el ON CONFLICT de gastos/ingresos da error.
+    try:
+        cursor.execute('''
+            UPDATE product_ingredients pi SET ingredient_id = canon.keep_id
+            FROM ingredients i
+            JOIN (
+                SELECT MIN(id) AS keep_id, name, tenant_id
+                FROM ingredients GROUP BY name, tenant_id
+            ) canon ON i.name = canon.name AND i.tenant_id IS NOT DISTINCT FROM canon.tenant_id
+            WHERE pi.ingredient_id = i.id AND i.id <> canon.keep_id
+              AND NOT EXISTS (
+                  SELECT 1 FROM product_ingredients pi2
+                  WHERE pi2.product_id = pi.product_id AND pi2.ingredient_id = canon.keep_id
+              );
+        ''')
+        cursor.execute('''
+            DELETE FROM product_ingredients pi USING ingredients i,
+                (SELECT MIN(id) AS keep_id, name, tenant_id FROM ingredients GROUP BY name, tenant_id) canon
+            WHERE pi.ingredient_id = i.id
+              AND i.name = canon.name AND i.tenant_id IS NOT DISTINCT FROM canon.tenant_id
+              AND i.id <> canon.keep_id;
+        ''')
+        cursor.execute('''
+            DELETE FROM ingredients i USING
+                (SELECT MIN(id) AS keep_id, name, tenant_id FROM ingredients GROUP BY name, tenant_id) canon
+            WHERE i.name = canon.name AND i.tenant_id IS NOT DISTINCT FROM canon.tenant_id
+              AND i.id <> canon.keep_id;
+        ''')
+        conn.commit()
+    except Exception:
+        conn.rollback()
     # Agregar constraint único compuesto (por tenant) si no existe
     try:
         cursor.execute("ALTER TABLE ingredients ADD CONSTRAINT ingredients_name_tenant_unique UNIQUE(name, tenant_id);")
@@ -180,6 +212,11 @@ def init_db():
     ''')
     try:
         cursor.execute("ALTER TABLE providers ADD COLUMN IF NOT EXISTS tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE;")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+    try:
+        cursor.execute("ALTER TABLE providers ADD COLUMN IF NOT EXISTS is_resale BOOLEAN DEFAULT false;")
         conn.commit()
     except Exception:
         conn.rollback()
@@ -298,6 +335,29 @@ def init_db():
     try:
         cursor.execute("ALTER TABLE stock ADD COLUMN IF NOT EXISTS tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE;")
         cursor.execute("ALTER TABLE stock ADD COLUMN IF NOT EXISTS id SERIAL;")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+    # Deduplicar stock (product_id, tenant_id) sumando cantidades, y crear el constraint
+    # que requiere el ON CONFLICT de producción/ventas (tablas viejas no lo tenían).
+    try:
+        cursor.execute('''
+            UPDATE stock s SET quantity_remaining = agg.total
+            FROM (SELECT MIN(id) AS keep_id, SUM(quantity_remaining) AS total, product_id, tenant_id
+                  FROM stock GROUP BY product_id, tenant_id) agg
+            WHERE s.id = agg.keep_id;
+        ''')
+        cursor.execute('''
+            DELETE FROM stock s USING
+                (SELECT MIN(id) AS keep_id, product_id, tenant_id FROM stock GROUP BY product_id, tenant_id) canon
+            WHERE s.product_id = canon.product_id AND s.tenant_id IS NOT DISTINCT FROM canon.tenant_id
+              AND s.id <> canon.keep_id;
+        ''')
+        conn.commit()
+    except Exception:
+        conn.rollback()
+    try:
+        cursor.execute("ALTER TABLE stock ADD CONSTRAINT stock_product_tenant_unique UNIQUE(product_id, tenant_id);")
         conn.commit()
     except Exception:
         conn.rollback()

@@ -400,7 +400,7 @@ async function loadEscandalloTable() {
             const minStockText = (prod.min_stock && prod.min_stock > 0) ? `${prod.min_stock} u.` : '-';
             const typeTag = isSimple
                 ? `<span class="tag tag-blue" style="font-size:0.7rem;">SIMPLE</span>`
-                : `<span class="tag tag-green" style="font-size:0.7rem;">FÓRMULA</span>`;
+                : `<span class="tag tag-green" style="font-size:0.7rem;">COMPUESTO</span>`;
             const cogsLabel = isSimple
                 ? `<strong style="color:var(--primary);">$${prod.gpu.toFixed(2)}</strong><span style="font-size:0.7rem;color:var(--text-muted);display:block;">desde gastos</span>`
                 : `<strong style="color:var(--primary);">$${prod.gpu.toFixed(2)}</strong>`;
@@ -546,7 +546,7 @@ document.getElementById('escandallo-form').addEventListener('submit', async (e) 
 let _pendingProductEdit = null;
 function viewProduct(id, name, price, yld, minStock, articleType) {
     _pendingProductEdit = { id, name, price, yld, minStock, articleType };
-    const typeLabel = articleType === 'SIMPLE' ? 'SIMPLE (reventa)' : 'FÓRMULA (fabricado)';
+    const typeLabel = articleType === 'SIMPLE' ? 'SIMPLE (reventa)' : 'COMPUESTO (fabricado)';
     document.getElementById('modal-title').textContent = name;
     document.getElementById('modal-body').innerHTML = `
         <table class="data-table"><tbody>
@@ -898,10 +898,10 @@ async function loadProviders() {
         if (!res.ok) throw new Error('Error al cargar proveedores');
         allProviders = await res.json();
         tbody.innerHTML = allProviders.length === 0
-            ? `<tr><td colspan="3" style="text-align:center;color:var(--text-muted);padding:20px;">No hay proveedores cargados todavía.</td></tr>`
-            : allProviders.map(p => `<tr><td>${p.name}</td><td>${p.category}</td><td style="white-space:nowrap;"><button class="btn secondary outline btn-icon" onclick="viewProvider(${p.id},'${(p.name||'').replace(/'/g,'')}','${(p.category||'').replace(/'/g,'')}')" title="Ver"><span class="material-symbols-outlined">visibility</span></button></td></tr>`).join('');
+            ? `<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:20px;">No hay proveedores cargados todavía.</td></tr>`
+            : allProviders.map(p => `<tr><td>${p.name}</td><td>${p.category}</td><td>${p.is_resale ? '<span class="tag tag-purple" style="font-size:0.7rem;">COMPRA/VENTA</span>' : '<span class="tag tag-blue" style="font-size:0.7rem;">GENERAL</span>'}</td><td style="white-space:nowrap;"><button class="btn secondary outline btn-icon" onclick="viewProvider(${p.id})" title="Ver"><span class="material-symbols-outlined">visibility</span></button></td></tr>`).join('');
     } catch(err) {
-        if (tbody) tbody.innerHTML = `<tr><td colspan="3" style="text-align:center;color:var(--negative);padding:20px;">Error al cargar. Recargá la página.</td></tr>`;
+        if (tbody) tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--negative);padding:20px;">Error al cargar. Recargá la página.</td></tr>`;
     }
 }
 document.getElementById('provider-form').addEventListener('submit', async (e) => {
@@ -910,7 +910,7 @@ document.getElementById('provider-form').addEventListener('submit', async (e) =>
     const originalHtml = submitBtn.innerHTML;
     submitBtn.disabled = true;
     submitBtn.innerHTML = '<span class="material-symbols-outlined animate-spin" style="font-size:1.1rem;vertical-align:middle;">sync</span> GUARDANDO...';
-    const payload = { name: document.getElementById('prov-name').value.trim(), category_name: document.getElementById('prov-cat').value };
+    const payload = { name: document.getElementById('prov-name').value.trim(), category_name: document.getElementById('prov-cat').value, is_resale: document.getElementById('prov-is-resale').checked };
     try {
         const res = await apiFetch('/providers', { method: 'POST', body: JSON.stringify(payload) });
         if (res.ok) {
@@ -933,34 +933,44 @@ document.getElementById('provider-form').addEventListener('submit', async (e) =>
     }
 });
 let _editingProviderId = null;
-function viewProvider(id, name, category) {
+function viewProvider(id) {
+    const p = (allProviders || []).find(x => x.id === id) || {};
     _editingProviderId = id;
+    const name = p.name || '', category = p.category || '';
+    const tipoTag = p.is_resale ? '<span class="tag tag-purple">COMPRA/VENTA</span>' : '<span class="tag tag-blue">GENERAL</span>';
     document.getElementById('modal-title').textContent = `PROVEEDOR`;
     document.getElementById('modal-body').innerHTML = `
-        <table class="data-table"><tbody><tr><td style="color:var(--text-muted);width:35%;">NOMBRE</td><td><strong>${name}</strong></td></tr><tr><td style="color:var(--text-muted);">CATEGORÍA</td><td>${category}</td></tr></tbody></table>
+        <table class="data-table"><tbody><tr><td style="color:var(--text-muted);width:35%;">NOMBRE</td><td><strong>${name}</strong></td></tr><tr><td style="color:var(--text-muted);">CATEGORÍA</td><td>${category}</td></tr><tr><td style="color:var(--text-muted);">TIPO</td><td>${tipoTag}</td></tr></tbody></table>
         <div id="prov-edit-form" style="display:none;margin-top:16px;border-top:1px solid var(--surface-border);padding-top:16px;">
-            <div class="form-row"><div class="input-group"><label>NOMBRE</label><input id="modal-prov-name" type="text" value="${name}"></div><div class="input-group"><label>CATEGORÍA</label><select id="modal-prov-cat"></select></div></div>
+            <div class="form-row"><div class="input-group"><label>NOMBRE</label><input id="modal-prov-name" type="text"></div><div class="input-group"><label>CATEGORÍA</label><select id="modal-prov-cat"></select></div></div>
+            <label style="display:flex;align-items:center;gap:8px;margin:6px 0 10px;cursor:pointer;font-size:0.82rem;color:var(--text-muted);">
+                <input type="checkbox" id="modal-prov-is-resale" style="width:15px;height:15px;accent-color:var(--primary);cursor:pointer;" ${p.is_resale ? 'checked' : ''}>
+                <span>PROVEEDOR DE COMPRA/VENTA</span>
+            </label>
             <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;"><button class="btn secondary outline" onclick="document.getElementById('prov-edit-form').style.display='none'">CANCELAR</button><button class="btn primary" onclick="saveProviderEdit(${id})">GUARDAR</button></div>
         </div>
         <div style="display:flex;gap:10px;margin-top:20px;border-top:1px solid var(--surface-border);padding-top:16px;">
-            <button class="btn secondary outline" style="flex:1;" onclick="toggleProviderEditForm('${category}')"><span class="material-symbols-outlined" style="font-size:1rem;vertical-align:middle;">edit</span> EDITAR</button>
+            <button class="btn secondary outline" style="flex:1;" onclick="toggleProviderEditForm(${id})"><span class="material-symbols-outlined" style="font-size:1rem;vertical-align:middle;">edit</span> EDITAR</button>
             <button class="btn" style="flex:1;background:var(--negative);color:white;" onclick="deleteProvider(${id})"><span class="material-symbols-outlined" style="font-size:1rem;vertical-align:middle;">delete</span> ELIMINAR</button>
         </div>`;
     document.getElementById('detail-modal').style.display = 'block';
 }
-async function toggleProviderEditForm(currentCat) {
+async function toggleProviderEditForm(id) {
     const form = document.getElementById('prov-edit-form');
     if (form.style.display === 'none') {
+        const p = (allProviders || []).find(x => x.id === id) || {};
+        document.getElementById('modal-prov-name').value = p.name || '';
         const catSel = document.getElementById('modal-prov-cat');
         const catRes = await apiFetch('/categories'); const cats = await catRes.json();
-        catSel.innerHTML = cats.map(c => `<option value="${c.name}" ${c.name === currentCat ? 'selected' : ''}>${c.name}</option>`).join('');
+        catSel.innerHTML = cats.map(c => `<option value="${c.name}" ${c.name === p.category ? 'selected' : ''}>${c.name}</option>`).join('');
         form.style.display = 'block';
     } else { form.style.display = 'none'; }
 }
 async function saveProviderEdit(id) {
     const name = document.getElementById('modal-prov-name').value.trim();
     const category_name = document.getElementById('modal-prov-cat').value;
-    const res = await apiFetch(`/providers/${id}`, { method: 'PUT', body: JSON.stringify({ name, category_name }) });
+    const is_resale = document.getElementById('modal-prov-is-resale').checked;
+    const res = await apiFetch(`/providers/${id}`, { method: 'PUT', body: JSON.stringify({ name, category_name, is_resale }) });
     if (res.ok) { closeModal(); loadProviders(); } else { const d = await res.json(); alert(d.detail || 'Error'); }
 }
 async function deleteProvider(id) { if (confirm('¿ELIMINAR ESTE PROVEEDOR?')) { await apiFetch(`/providers/${id}`, { method: 'DELETE' }); closeModal(); loadProviders(); } }
