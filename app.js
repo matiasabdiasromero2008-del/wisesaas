@@ -129,6 +129,8 @@ function switchSection(secId, title) {
     document.querySelectorAll('#dashboard-view .section').forEach(s => s.classList.remove('active'));
     const t = document.getElementById(secId); if (t) t.classList.add('active');
     document.getElementById('view-title').textContent = title.toUpperCase();
+    ensureTabs(secId);
+    applyFieldParams(secId);
     if (secId === 'sec-performance') loadMetrics();
     if (secId === 'sec-ventas') { loadClientsDropdown(); loadStockDropdown(); loadSalesHistory(); setNow('sale-date'); }
     if (secId === 'sec-gastos') { loadCategories(); loadProvidersDropdown(); loadExpensesHistory(); setNow('exp-date'); if (expCont && expCont.children.length === 0) addExpRow(); }
@@ -245,6 +247,8 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
         const data = await res.json();
         setToken(data.token);
         currentUser = data;
+        if (data.custom_role) localStorage.setItem('wise_custom_role', data.custom_role);
+        else localStorage.removeItem('wise_custom_role');
         if (data.role === 'SuperAdmin') setupSuperAdmin();
         else bootAndShowDashboard();
     } else {
@@ -282,6 +286,7 @@ async function bootAndShowDashboard() {
     loader.style.display = 'flex';
     // Precarga en paralelo de todos los datos de las planillas
     const tasks = [
+        loadSettings(),
         loadClientsDropdown(), loadStockDropdown(), loadSalesHistory(),
         loadCategories(), loadProvidersDropdown(), loadExpensesHistory(),
         loadProductsDropdown('prodrun-product'), loadProductionHistory(),
@@ -293,6 +298,7 @@ async function bootAndShowDashboard() {
     const total = tasks.length;
     await Promise.allSettled(tasks.map(p => Promise.resolve(p).catch(() => {}).then(() => { done++; _bootSetProgress(done, total); })));
     _bootSetProgress(total, total);
+    populateRoleSelect();
     setTimeout(() => {
         loader.classList.add('boot-hide');
         setTimeout(() => { loader.style.display = 'none'; loader.classList.remove('boot-hide'); }, 450);
@@ -313,7 +319,7 @@ document.getElementById('sa-logout-btn').addEventListener('click', doLogout);
     try {
         const payload = JSON.parse(atob(token.split('.')[1]));
         if (payload.exp && Date.now() / 1000 > payload.exp) { clearToken(); return; }
-        currentUser = { token, username: payload.username, role: payload.role, tenant_id: payload.tenant_id };
+        currentUser = { token, username: payload.username, role: payload.role, tenant_id: payload.tenant_id, custom_role: localStorage.getItem('wise_custom_role') || null };
         if (payload.role === 'SuperAdmin') setupSuperAdmin();
         else bootAndShowDashboard();
     } catch (e) { clearToken(); }
@@ -458,8 +464,22 @@ function setupDashboard() {
         addNav('manage_accounts', 'USUARIOS', 'sec-usuarios');
         switchSection('sec-performance', 'PERFORMANCE');
     } else {
-        addNav('point_of_sale', 'VENTAS', 'sec-ventas', true);
-        switchSection('sec-ventas', 'VENTAS');
+        // Operator: si tiene rol personalizado, mostrar solo las planillas habilitadas
+        const roleDef = currentUser.custom_role ? getRoles().find(r => r.name === currentUser.custom_role) : null;
+        if (roleDef && roleDef.perms && Object.keys(roleDef.perms).length) {
+            let first = null;
+            PERM_TREE.forEach(pl => {
+                if (roleDef.perms[pl.sec] && roleDef.perms[pl.sec].on) {
+                    addNav(pl.icon, pl.label, pl.sec, !first);
+                    if (!first) first = { sec: pl.sec, label: pl.label };
+                }
+            });
+            if (first) switchSection(first.sec, first.label);
+            else { addNav('point_of_sale', 'VENTAS', 'sec-ventas', true); switchSection('sec-ventas', 'VENTAS'); }
+        } else {
+            addNav('point_of_sale', 'VENTAS', 'sec-ventas', true);
+            switchSection('sec-ventas', 'VENTAS');
+        }
     }
     showView('dashboard-view');
 }
@@ -505,7 +525,7 @@ async function loadUsers() {
     document.getElementById('users-tbody').innerHTML = users.map(u => `
         <tr>
             <td><strong>${u.username}</strong></td>
-            <td><span class="tag ${roleColors[u.role] || 'tag-green'}">${u.role}</span></td>
+            <td><span class="tag ${u.custom_role ? 'tag-purple' : (roleColors[u.role] || 'tag-green')}">${u.custom_role || u.role}</span></td>
             <td>${u.email || '—'}</td>
             <td>
                 <button class="btn secondary outline btn-icon" onclick="deleteUser(${u.id}, '${u.username}')" title="Eliminar">
@@ -523,11 +543,25 @@ document.getElementById('create-user-form').addEventListener('submit', async (e)
     const m = document.getElementById('create-user-msg');
     submitBtn.disabled = true;
     submitBtn.innerHTML = '<span class="material-symbols-outlined animate-spin" style="font-size:1.1rem;vertical-align:middle;">sync</span> CREANDO...';
+    const roleVal = document.getElementById('new-user-role').value;
+    const isCustomRole = roleVal !== 'Admin' && roleVal !== 'Operator';
+    const passMode = document.getElementById('new-user-pass-mode').value;
     const payload = {
         username: document.getElementById('new-user-username').value.trim(),
-        email: document.getElementById('new-user-email').value.trim(),
-        role: document.getElementById('new-user-role').value,
+        email: document.getElementById('new-user-email').value.trim() || null,
+        role: isCustomRole ? 'Operator' : roleVal,
+        custom_role: isCustomRole ? roleVal : null,
+        phone: document.getElementById('new-user-phone').value.trim() || null,
+        password: passMode === 'manual' ? document.getElementById('new-user-password').value : null,
     };
+    if (passMode === 'manual' && (!payload.password || payload.password.length < 6)) {
+        m.textContent = 'La contraseña manual debe tener al menos 6 caracteres'; m.className = 'error-msg';
+        submitBtn.disabled = false; submitBtn.innerHTML = originalHtml; return;
+    }
+    if (passMode === 'auto' && !payload.email) {
+        m.textContent = 'Con contraseña automática necesitás indicar un correo'; m.className = 'error-msg';
+        submitBtn.disabled = false; submitBtn.innerHTML = originalHtml; return;
+    }
     try {
         const res = await apiFetch('/users', { method: 'POST', body: JSON.stringify(payload) });
         if (res.ok) {
@@ -1096,7 +1130,15 @@ document.getElementById('provider-form').addEventListener('submit', async (e) =>
     const originalHtml = submitBtn.innerHTML;
     submitBtn.disabled = true;
     submitBtn.innerHTML = '<span class="material-symbols-outlined animate-spin" style="font-size:1.1rem;vertical-align:middle;">sync</span> GUARDANDO...';
-    const payload = { name: document.getElementById('prov-name').value.trim(), category_name: document.getElementById('prov-cat').value, is_resale: document.getElementById('prov-is-resale').checked };
+    const payload = {
+        name: document.getElementById('prov-name').value.trim(),
+        category_name: document.getElementById('prov-cat').value,
+        is_resale: document.getElementById('prov-is-resale').checked,
+        phone: (document.getElementById('prov-phone') || {}).value || null,
+        location: (document.getElementById('prov-location') || {}).value || null,
+        delivery_time: (document.getElementById('prov-delivery') || {}).value || null,
+        observations: (document.getElementById('prov-obs') || {}).value || null,
+    };
     try {
         const res = await apiFetch('/providers', { method: 'POST', body: JSON.stringify(payload) });
         if (res.ok) {
@@ -1282,3 +1324,447 @@ async function calculateAndRenderMetrics(targetMonth, sales, expenses, products)
     animateNumberValue('perf-total-egresos', currentTotalEgresos, totalEgresos, 800, '$');
     currentTotalIngresos = totalIngresosBrutos; currentTotalGtr = totalGTR; currentTotalEgresos = totalEgresos;
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// PARAMETRIZACIÓN, TABS, ROLES y MIGRAR DATOS
+// ═════════════════════════════════════════════════════════════════════════════
+
+let tenantSettings = {};
+async function loadSettings() {
+    try { const r = await apiFetch('/settings'); if (r.ok) tenantSettings = await r.json(); } catch (e) {}
+}
+async function saveSetting(key, value) {
+    tenantSettings[key] = value;
+    try { await apiFetch('/settings', { method: 'PUT', body: JSON.stringify({ key, value }) }); } catch (e) {}
+}
+function getParamConfig(secId) {
+    try { return JSON.parse(tenantSettings['params_' + secId] || '{}'); } catch (e) { return {}; }
+}
+
+// ─── Manual de campos opcionales por planilla ─────────────────────────────────
+const PARAM_FIELDS = {
+    'sec-clientes': [
+        { key: 'client-phone', label: 'TELÉFONO', desc: 'Número de contacto del cliente. Útil para avisarle pedidos listos o promociones.', def: true },
+    ],
+    'sec-proveedores': [
+        { key: 'prov-phone', label: 'TELÉFONO', desc: 'Número de contacto del proveedor para hacer pedidos.', def: false },
+        { key: 'prov-location', label: 'UBICACIÓN', desc: 'Dirección o zona del proveedor.', def: false },
+        { key: 'prov-delivery', label: 'PLAZO DE ENTREGA', desc: 'Cuánto tarda en entregar desde que hacés el pedido (ej: 48 hs).', def: false },
+        { key: 'prov-obs', label: 'OBSERVACIONES', desc: 'Notas libres: condiciones de pago, mínimos de compra, etc.', def: false },
+    ],
+    'sec-ventas': [
+        { key: 'sale-discount-group', label: 'DESCUENTO', desc: 'Permite aplicar descuento por monto o porcentaje al registrar una venta.', def: true },
+    ],
+    'sec-escandallos': [
+        { key: 'esc-min-stock', label: 'STOCK MÍNIMO', desc: 'Alerta en PERFORMANCE cuando el stock cae por debajo de este número.', def: true },
+    ],
+};
+
+function applyFieldParams(secId) {
+    const fields = PARAM_FIELDS[secId];
+    if (!fields) return;
+    const cfg = getParamConfig(secId);
+    fields.forEach(f => {
+        const fcfg = cfg[f.key] || { on: f.def, req: false };
+        let group = document.querySelector(`.param-field[data-param="${f.key}"]`);
+        if (!group) {
+            const el = document.getElementById(f.key);
+            group = el ? el.closest('.input-group') : null;
+        }
+        if (!group) return;
+        group.style.display = fcfg.on ? '' : 'none';
+        const input = group.querySelector('input, select');
+        if (input) {
+            if (fcfg.on && fcfg.req) input.setAttribute('required', '');
+            else input.removeAttribute('required');
+        }
+    });
+}
+
+// ─── Árbol de permisos para ROLES (USUARIOS → PARAMETRIZACIÓN) ────────────────
+const PERM_TREE = [
+    { sec: 'sec-ventas', label: 'VENTAS', icon: 'point_of_sale', funcs: [
+        { k: 'registrar', label: 'REGISTRAR VENTAS' },
+        { k: 'historial', label: 'HISTORIAL DE VENTAS', subs: ['VER', 'EDITAR', 'ELIMINAR'] },
+        { k: 'param', label: 'PARAMETRIZACIÓN' } ] },
+    { sec: 'sec-gastos', label: 'GASTOS', icon: 'receipt_long', funcs: [
+        { k: 'registrar', label: 'REGISTRAR GASTOS' },
+        { k: 'historial', label: 'HISTORIAL DE GASTOS', subs: ['VER', 'EDITAR', 'ELIMINAR'] },
+        { k: 'param', label: 'PARAMETRIZACIÓN' } ] },
+    { sec: 'sec-ingresos', label: 'INGRESOS', icon: 'conveyor_belt', funcs: [
+        { k: 'registrar', label: 'REGISTRAR INGRESOS' },
+        { k: 'historial', label: 'HISTORIAL', subs: ['VER', 'EDITAR', 'ELIMINAR'] } ] },
+    { sec: 'sec-clientes', label: 'CLIENTES', icon: 'person', funcs: [
+        { k: 'registrar', label: 'REGISTRAR CLIENTES' },
+        { k: 'historial', label: 'LISTA DE CLIENTES', subs: ['VER', 'EDITAR', 'ELIMINAR'] } ] },
+    { sec: 'sec-proveedores', label: 'PROVEEDORES', icon: 'local_shipping', funcs: [
+        { k: 'registrar', label: 'REGISTRAR PROVEEDORES' },
+        { k: 'historial', label: 'LISTA DE PROVEEDORES', subs: ['VER', 'EDITAR', 'ELIMINAR'] },
+        { k: 'param', label: 'PARAMETRIZACIÓN' } ] },
+    { sec: 'sec-escandallos', label: 'ARTÍCULOS', icon: 'inventory_2', funcs: [
+        { k: 'registrar', label: 'GESTIÓN DE ARTÍCULOS' },
+        { k: 'historial', label: 'PLANILLA DE ARTÍCULOS', subs: ['VER', 'EDITAR', 'ELIMINAR'] } ] },
+    { sec: 'sec-almacen', label: 'ALMACÉN', icon: 'warehouse', funcs: [
+        { k: 'historial', label: 'STOCK DE INSUMOS', subs: ['VER'] } ] },
+];
+
+function getRoles() {
+    try { return JSON.parse(tenantSettings['roles'] || '[]'); } catch (e) { return []; }
+}
+
+// ─── Sistema de TABS por sección ──────────────────────────────────────────────
+const TABBED_SECTIONS = ['sec-ventas', 'sec-gastos', 'sec-ingresos', 'sec-clientes', 'sec-proveedores', 'sec-escandallos', 'sec-almacen', 'sec-usuarios'];
+
+function ensureTabs(secId) {
+    if (!TABBED_SECTIONS.includes(secId)) return;
+    const sec = document.getElementById(secId);
+    if (!sec || sec.dataset.tabbed) return;
+    sec.dataset.tabbed = '1';
+    const funcPanel = document.createElement('div');
+    funcPanel.className = 'tab-panel active'; funcPanel.dataset.tab = 'funciones';
+    while (sec.firstChild) funcPanel.appendChild(sec.firstChild);
+    const bar = document.createElement('div'); bar.className = 'section-tabs';
+    bar.innerHTML = `
+        <button class="section-tab active" data-tab="funciones"><span class="material-symbols-outlined">apps</span> FUNCIONES</button>
+        <button class="section-tab" data-tab="param"><span class="material-symbols-outlined">tune</span> PARAMETRIZACIÓN</button>
+        <button class="section-tab" data-tab="migrar"><span class="material-symbols-outlined">sync_alt</span> MIGRAR DATOS</button>`;
+    const paramPanel = document.createElement('div');
+    paramPanel.className = 'tab-panel'; paramPanel.dataset.tab = 'param';
+    const migrarPanel = document.createElement('div');
+    migrarPanel.className = 'tab-panel'; migrarPanel.dataset.tab = 'migrar';
+    sec.appendChild(bar); sec.appendChild(funcPanel); sec.appendChild(paramPanel); sec.appendChild(migrarPanel);
+    bar.addEventListener('click', e => {
+        const b = e.target.closest('.section-tab'); if (!b) return;
+        bar.querySelectorAll('.section-tab').forEach(x => x.classList.remove('active'));
+        b.classList.add('active');
+        sec.querySelectorAll(':scope > .tab-panel').forEach(p => p.classList.toggle('active', p.dataset.tab === b.dataset.tab));
+        if (b.dataset.tab === 'param') renderParamPanel(secId, paramPanel);
+        if (b.dataset.tab === 'migrar') renderMigrarPanel(secId, migrarPanel);
+    });
+}
+
+// ─── Panel PARAMETRIZACIÓN ────────────────────────────────────────────────────
+function renderParamPanel(secId, panel) {
+    const fields = PARAM_FIELDS[secId] || [];
+    const cfg = getParamConfig(secId);
+    let html = `<div class="card"><h3 style="display:flex;align-items:center;gap:8px;"><span class="material-symbols-outlined" style="color:var(--primary);">tune</span> CAMPOS DE ESTA PLANILLA</h3>`;
+    if (!fields.length) {
+        html += `<p style="color:var(--text-muted);font-size:0.9rem;">Esta planilla no tiene campos configurables por ahora.</p>`;
+    } else {
+        html += fields.map(f => {
+            const fc = cfg[f.key] || { on: f.def, req: false };
+            return `<div class="param-row">
+                <label class="param-check">
+                    <input type="checkbox" data-pf="${f.key}" ${fc.on ? 'checked' : ''}>
+                    <div><strong>${f.label}</strong><p>${f.desc}</p></div>
+                </label>
+                <label class="param-req" style="${fc.on ? '' : 'visibility:hidden;'}">
+                    <input type="checkbox" data-pfreq="${f.key}" ${fc.req ? 'checked' : ''}> obligatorio
+                </label>
+            </div>`;
+        }).join('');
+    }
+    html += `</div>`;
+    if (secId === 'sec-proveedores') html += `<div class="card" id="cats-manager"></div>`;
+    if (secId === 'sec-usuarios') html += `<div class="card" id="roles-manager"></div>`;
+    panel.innerHTML = html;
+    panel.querySelectorAll('[data-pf]').forEach(chk => {
+        chk.addEventListener('change', () => {
+            const key = chk.dataset.pf;
+            const c = getParamConfig(secId); c[key] = c[key] || {};
+            c[key].on = chk.checked;
+            if (!chk.checked) c[key].req = false;
+            saveSetting('params_' + secId, JSON.stringify(c));
+            const reqLbl = panel.querySelector(`[data-pfreq="${key}"]`).closest('.param-req');
+            reqLbl.style.visibility = chk.checked ? '' : 'hidden';
+            if (!chk.checked) panel.querySelector(`[data-pfreq="${key}"]`).checked = false;
+            applyFieldParams(secId);
+        });
+    });
+    panel.querySelectorAll('[data-pfreq]').forEach(chk => {
+        chk.addEventListener('change', () => {
+            const key = chk.dataset.pfreq;
+            const c = getParamConfig(secId); c[key] = c[key] || { on: true };
+            c[key].req = chk.checked;
+            saveSetting('params_' + secId, JSON.stringify(c));
+            applyFieldParams(secId);
+        });
+    });
+    if (secId === 'sec-proveedores') renderCatsManager(document.getElementById('cats-manager'));
+    if (secId === 'sec-usuarios') renderRolesManager(document.getElementById('roles-manager'));
+}
+
+// ─── Gestor de CATEGORÍAS (PROVEEDORES → PARAMETRIZACIÓN) ─────────────────────
+async function renderCatsManager(box) {
+    if (!box) return;
+    const res = await apiFetch('/categories'); const cats = await res.json();
+    box.innerHTML = `
+        <h3 style="display:flex;align-items:center;gap:8px;"><span class="material-symbols-outlined" style="color:var(--primary);">category</span> CATEGORÍAS DE GASTO</h3>
+        <p style="color:var(--text-muted);font-size:0.85rem;margin-top:-10px;">Creá, renombrá o eliminá las categorías que usa tu negocio. No se pueden eliminar categorías en uso.</p>
+        <div style="display:flex;gap:10px;margin-bottom:16px;">
+            <input type="text" id="new-cat-name" placeholder="NUEVA CATEGORÍA..." style="flex:1;">
+            <button class="btn primary" id="add-cat-btn"><span class="material-symbols-outlined">add</span> AGREGAR</button>
+        </div>
+        <div id="cats-list">${cats.map(c => `
+            <div class="cat-row" data-id="${c.id}">
+                <input type="text" value="${c.name}" data-orig="${c.name}">
+                <button class="btn secondary outline btn-icon cat-save" title="Guardar cambio de nombre"><span class="material-symbols-outlined">check</span></button>
+                <button class="btn secondary outline btn-icon cat-del" title="Eliminar" style="color:var(--negative);"><span class="material-symbols-outlined">delete</span></button>
+            </div>`).join('')}</div>
+        <div id="cats-msg"></div>`;
+    box.querySelector('#add-cat-btn').addEventListener('click', async () => {
+        const inp = box.querySelector('#new-cat-name');
+        const name = inp.value.trim(); if (!name) return;
+        const r = await apiFetch('/categories', { method: 'POST', body: JSON.stringify({ name }) });
+        const m = box.querySelector('#cats-msg');
+        if (r.ok) { inp.value = ''; renderCatsManager(box); loadCategories(); }
+        else { const d = await r.json(); m.textContent = d.detail || 'Error'; m.className = 'error-msg'; setTimeout(() => m.textContent = '', 4000); }
+    });
+    box.querySelectorAll('.cat-row').forEach(row => {
+        row.querySelector('.cat-save').addEventListener('click', async () => {
+            const inp = row.querySelector('input');
+            if (inp.value.trim() === inp.dataset.orig) return;
+            const r = await apiFetch(`/categories/${row.dataset.id}`, { method: 'PUT', body: JSON.stringify({ name: inp.value.trim() }) });
+            if (r.ok) { renderCatsManager(box); loadCategories(); }
+            else { const d = await r.json(); alert(d.detail || 'Error'); }
+        });
+        row.querySelector('.cat-del').addEventListener('click', async () => {
+            if (!confirm('¿Eliminar esta categoría?')) return;
+            const r = await apiFetch(`/categories/${row.dataset.id}`, { method: 'DELETE' });
+            if (r.ok) { renderCatsManager(box); loadCategories(); }
+            else { const d = await r.json(); const m = box.querySelector('#cats-msg'); m.textContent = d.detail || 'Error'; m.className = 'error-msg'; setTimeout(() => m.textContent = '', 4000); }
+        });
+    });
+}
+
+// ─── Gestor de ROLES (USUARIOS → PARAMETRIZACIÓN) ─────────────────────────────
+function renderRolesManager(box) {
+    if (!box) return;
+    const roles = getRoles();
+    box.innerHTML = `
+        <h3 style="display:flex;align-items:center;gap:8px;"><span class="material-symbols-outlined" style="color:var(--primary);">badge</span> ROLES PERSONALIZADOS</h3>
+        <p style="color:var(--text-muted);font-size:0.85rem;margin-top:-10px;">Creá roles con habilitaciones específicas (ej: VENDEDOR solo con VENTAS). Al crear un usuario podés asignarle uno de estos roles.</p>
+        <div style="display:flex;gap:10px;margin-bottom:16px;">
+            <input type="text" id="new-role-name" placeholder="NOMBRE DEL ROL (ej: VENDEDOR)..." style="flex:1;">
+            <button class="btn primary" id="add-role-btn"><span class="material-symbols-outlined">add</span> CREAR ROL</button>
+        </div>
+        <div id="role-editor" style="display:none;"></div>
+        <div id="roles-list">${roles.map((r, i) => `
+            <div class="cat-row">
+                <strong style="flex:1;">${r.name}</strong>
+                <span style="color:var(--text-muted);font-size:0.8rem;">${Object.keys(r.perms || {}).filter(s => r.perms[s].on).length} planillas</span>
+                <button class="btn secondary outline btn-icon role-edit" data-i="${i}" title="Editar"><span class="material-symbols-outlined">edit</span></button>
+                <button class="btn secondary outline btn-icon role-del" data-i="${i}" title="Eliminar" style="color:var(--negative);"><span class="material-symbols-outlined">delete</span></button>
+            </div>`).join('')}</div>`;
+    box.querySelector('#add-role-btn').addEventListener('click', () => {
+        const name = box.querySelector('#new-role-name').value.trim().toUpperCase();
+        if (!name) return;
+        openRoleEditor(box, { name, perms: {} }, -1);
+    });
+    box.querySelectorAll('.role-edit').forEach(b => b.addEventListener('click', () => {
+        const i = parseInt(b.dataset.i); openRoleEditor(box, JSON.parse(JSON.stringify(getRoles()[i])), i);
+    }));
+    box.querySelectorAll('.role-del').forEach(b => b.addEventListener('click', async () => {
+        if (!confirm('¿Eliminar este rol?')) return;
+        const roles2 = getRoles(); roles2.splice(parseInt(b.dataset.i), 1);
+        await saveSetting('roles', JSON.stringify(roles2));
+        renderRolesManager(box); populateRoleSelect();
+    }));
+}
+
+function openRoleEditor(box, role, index) {
+    const ed = box.querySelector('#role-editor');
+    ed.style.display = 'block';
+    ed.innerHTML = `
+        <div style="border:1px solid var(--primary);border-radius:12px;padding:16px;margin-bottom:16px;">
+            <h4 style="margin:0 0 12px;">HABILITACIONES — ${role.name}</h4>
+            <div id="perm-tree"></div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px;">
+                <button class="btn secondary outline" id="role-cancel">CANCELAR</button>
+                <button class="btn primary" id="role-save">GUARDAR ROL</button>
+            </div>
+        </div>`;
+    const tree = ed.querySelector('#perm-tree');
+    tree.innerHTML = PERM_TREE.map(pl => {
+        const p = role.perms[pl.sec] || {};
+        return `<div class="perm-planilla" data-sec="${pl.sec}">
+            <label class="param-check perm-lvl1">
+                <input type="checkbox" class="perm-sec" ${p.on ? 'checked' : ''}>
+                <div><strong><span class="material-symbols-outlined" style="font-size:1rem;vertical-align:middle;">${pl.icon}</span> ${pl.label}</strong></div>
+            </label>
+            <div class="perm-funcs" style="display:${p.on ? 'block' : 'none'};">
+                ${pl.funcs.map(fn => {
+                    const fp = (p.funcs || {})[fn.k] || {};
+                    return `<div data-func="${fn.k}">
+                        <label class="param-check perm-lvl2">
+                            <input type="checkbox" class="perm-func" ${fp.on ? 'checked' : ''}>
+                            <div>${fn.label}</div>
+                        </label>
+                        ${fn.subs ? `<div class="perm-subs" style="display:${fp.on ? 'flex' : 'none'};">
+                            ${fn.subs.map(sb => `<label class="param-check perm-lvl3"><input type="checkbox" class="perm-sub" data-sub="${sb}" ${(fp.subs || {})[sb] ? 'checked' : ''}> ${sb}</label>`).join('')}
+                        </div>` : ''}
+                    </div>`;
+                }).join('')}
+            </div>
+        </div>`;
+    }).join('');
+    tree.querySelectorAll('.perm-sec').forEach(chk => chk.addEventListener('change', () => {
+        chk.closest('.perm-planilla').querySelector('.perm-funcs').style.display = chk.checked ? 'block' : 'none';
+    }));
+    tree.querySelectorAll('.perm-func').forEach(chk => chk.addEventListener('change', () => {
+        const subs = chk.closest('[data-func]').querySelector('.perm-subs');
+        if (subs) subs.style.display = chk.checked ? 'flex' : 'none';
+    }));
+    ed.querySelector('#role-cancel').addEventListener('click', () => { ed.style.display = 'none'; });
+    ed.querySelector('#role-save').addEventListener('click', async () => {
+        const perms = {};
+        tree.querySelectorAll('.perm-planilla').forEach(pl => {
+            const on = pl.querySelector('.perm-sec').checked;
+            if (!on) return;
+            const funcs = {};
+            pl.querySelectorAll('[data-func]').forEach(fd => {
+                const fOn = fd.querySelector('.perm-func').checked;
+                if (!fOn) return;
+                const subs = {};
+                fd.querySelectorAll('.perm-sub').forEach(sb => { if (sb.checked) subs[sb.dataset.sub] = true; });
+                funcs[fd.dataset.func] = { on: true, subs };
+            });
+            perms[pl.dataset.sec] = { on: true, funcs };
+        });
+        const roles = getRoles();
+        const newRole = { name: role.name, perms };
+        if (index >= 0) roles[index] = newRole; else roles.push(newRole);
+        await saveSetting('roles', JSON.stringify(roles));
+        ed.style.display = 'none';
+        renderRolesManager(box); populateRoleSelect();
+    });
+}
+
+function populateRoleSelect() {
+    const sel = document.getElementById('new-user-role');
+    if (!sel) return;
+    const roles = getRoles();
+    sel.innerHTML = `<option value="Operator">Operator</option><option value="Admin">Admin</option>` +
+        roles.map(r => `<option value="${r.name}">${r.name}</option>`).join('');
+}
+
+// ─── MIGRAR DATOS (exportar / importar) ───────────────────────────────────────
+function tableToCSV(tbodyId) {
+    const tbody = document.getElementById(tbodyId);
+    if (!tbody) return '';
+    const table = tbody.closest('table');
+    const rows = [];
+    const headCells = [...table.querySelectorAll('thead th')].map(th => th.textContent.trim());
+    rows.push(headCells.join(';'));
+    tbody.querySelectorAll('tr').forEach(tr => {
+        if (tr.classList.contains('ingredient-row') || tr.classList.contains('skeleton-row')) return;
+        if (tr.style.display === 'none') return;
+        const cells = [...tr.querySelectorAll('td')].map(td => '"' + td.textContent.trim().replace(/"/g, '""') + '"');
+        if (cells.length > 1) rows.push(cells.join(';'));
+    });
+    return rows.join('\r\n');
+}
+function downloadCSV(filename, content) {
+    const blob = new Blob(['﻿' + content], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+}
+const EXPORT_TABLES = {
+    'sec-ventas': ['sales-history-tbody', 'ventas'],
+    'sec-gastos': ['expenses-history-tbody', 'gastos'],
+    'sec-ingresos': ['prodrun-tbody', 'ingresos'],
+    'sec-clientes': ['clients-tbody', 'clientes'],
+    'sec-proveedores': ['providers-tbody', 'proveedores'],
+    'sec-escandallos': ['escandallo-tbody', 'articulos'],
+    'sec-almacen': ['warehouse-tbody', 'almacen'],
+    'sec-usuarios': ['users-tbody', 'usuarios'],
+};
+const IMPORT_TEMPLATES = {
+    'sec-clientes': { name: 'clientes', headers: ['NOMBRE', 'TELEFONO'], example: ['MARIA LOPEZ', '+54 11 1234-5678'] },
+    'sec-proveedores': { name: 'proveedores', headers: ['NOMBRE', 'CATEGORIA', 'COMPRA_VENTA(SI/NO)'], example: ['DISTRIBUIDORA NORTE', 'INSUMOS', 'NO'] },
+    'sec-escandallos': { name: 'articulos', headers: ['NOMBRE', 'TIPO(SIMPLE/COMPUESTO)', 'PRECIO_VENTA', 'RENDIMIENTO', 'STOCK_MINIMO'], example: ['MERMELADA DE HIGO', 'COMPUESTO', '3500', '12', '5'] },
+};
+
+function renderMigrarPanel(secId, panel) {
+    const exp = EXPORT_TABLES[secId];
+    const tpl = IMPORT_TEMPLATES[secId];
+    let html = `<div class="card">
+        <h3 style="display:flex;align-items:center;gap:8px;"><span class="material-symbols-outlined" style="color:var(--primary);">download</span> EXPORTAR</h3>
+        <p style="color:var(--text-muted);font-size:0.85rem;margin-top:-10px;">Descargá los datos de esta planilla en un archivo compatible con Excel y Google Sheets.</p>
+        <button class="btn primary" id="export-btn"><span class="material-symbols-outlined">table_view</span> DESCARGAR PLANILLA</button>
+    </div>`;
+    if (tpl) {
+        html += `<div class="card">
+            <h3 style="display:flex;align-items:center;gap:8px;"><span class="material-symbols-outlined" style="color:var(--primary);">upload</span> IMPORTAR</h3>
+            <p style="color:var(--text-muted);font-size:0.85rem;margin-top:-10px;">Cargá datos en masa desde un archivo CSV (lo podés guardar desde Excel o Sheets con "Guardar como → CSV"). Primero descargá la planilla modelo para ver el formato exacto.</p>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                <button class="btn secondary outline" id="template-btn"><span class="material-symbols-outlined">description</span> DESCARGAR PLANILLA MODELO</button>
+                <label class="btn primary" style="cursor:pointer;"><span class="material-symbols-outlined">upload_file</span> SELECCIONAR ARCHIVO E IMPORTAR<input type="file" id="import-file" accept=".csv,text/csv" style="display:none;"></label>
+            </div>
+            <div id="import-msg" style="margin-top:12px;"></div>
+        </div>`;
+    } else {
+        html += `<div class="card"><p style="color:var(--text-muted);font-size:0.85rem;margin:0;">Esta planilla solo permite exportar. La importación está disponible en CLIENTES, PROVEEDORES y ARTÍCULOS.</p></div>`;
+    }
+    panel.innerHTML = html;
+    panel.querySelector('#export-btn').addEventListener('click', () => {
+        const csv = tableToCSV(exp[0]);
+        downloadCSV(`wise_${exp[1]}_${new Date().toISOString().slice(0, 10)}.csv`, csv);
+    });
+    if (tpl) {
+        panel.querySelector('#template-btn').addEventListener('click', () => {
+            downloadCSV(`wise_modelo_${tpl.name}.csv`, tpl.headers.join(';') + '\r\n' + tpl.example.join(';'));
+        });
+        panel.querySelector('#import-file').addEventListener('change', async (e) => {
+            const file = e.target.files[0]; if (!file) return;
+            const text = await file.text();
+            const msg = panel.querySelector('#import-msg');
+            msg.textContent = 'Importando...'; msg.className = '';
+            const result = await importCSV(secId, text);
+            msg.textContent = `Importación terminada: ${result.ok} registros cargados${result.fail ? `, ${result.fail} con error (${result.errors.slice(0, 3).join(' / ')})` : ''}.`;
+            msg.className = result.fail ? 'error-msg' : 'success-msg';
+            e.target.value = '';
+            if (secId === 'sec-clientes') loadClients();
+            if (secId === 'sec-proveedores') loadProviders();
+            if (secId === 'sec-escandallos') loadEscandalloTable();
+        });
+    }
+}
+
+async function importCSV(secId, text) {
+    const lines = text.replace(/^﻿/, '').split(/\r?\n/).filter(l => l.trim());
+    if (lines.length < 2) return { ok: 0, fail: 1, errors: ['El archivo no tiene filas de datos'] };
+    const delim = lines[0].includes(';') ? ';' : ',';
+    const parseRow = l => l.split(delim).map(c => c.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
+    let ok = 0, fail = 0; const errors = [];
+    for (const line of lines.slice(1)) {
+        const cells = parseRow(line);
+        if (!cells[0]) continue;
+        try {
+            let res;
+            if (secId === 'sec-clientes') {
+                res = await apiFetch('/clients', { method: 'POST', body: JSON.stringify({ name: cells[0].toUpperCase(), phone: cells[1] || '' }) });
+            } else if (secId === 'sec-proveedores') {
+                res = await apiFetch('/providers', { method: 'POST', body: JSON.stringify({ name: cells[0].toUpperCase(), category_name: (cells[1] || 'INSUMOS').toUpperCase(), is_resale: /^s/i.test(cells[2] || '') }) });
+            } else if (secId === 'sec-escandallos') {
+                const tipo = /simple/i.test(cells[1] || '') ? 'SIMPLE' : 'FORMULA';
+                res = await apiFetch('/products', { method: 'POST', body: JSON.stringify({ flavor_name: cells[0].toUpperCase(), article_type: tipo, sale_price: parseFloat(cells[2]) || 0, yield_per_batch: parseFloat(cells[3]) || 1, min_stock: parseInt(cells[4]) || 0 }) });
+            }
+            if (res && res.ok) ok++;
+            else { fail++; try { const d = await res.json(); errors.push(`${cells[0]}: ${d.detail || 'error'}`); } catch (_) { errors.push(cells[0]); } }
+        } catch (err) { fail++; errors.push(cells[0]); }
+    }
+    return { ok, fail, errors };
+}
+
+// ─── Toggle de modo de contraseña en CREAR USUARIO ────────────────────────────
+(function () {
+    const sel = document.getElementById('new-user-pass-mode');
+    if (sel) sel.addEventListener('change', () => {
+        document.getElementById('new-user-pass-group').style.display = sel.value === 'manual' ? '' : 'none';
+    });
+})();
+

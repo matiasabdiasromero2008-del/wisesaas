@@ -148,8 +148,11 @@ class DeleteTenantRequest(BaseModel):
 
 class CreateUserRequest(BaseModel):
     username: str
-    email: str
+    email: Optional[str] = None
     role: str = "Operator"
+    password: Optional[str] = None      # si viene, se usa en lugar de la autogenerada
+    custom_role: Optional[str] = None   # rol definido en PARAMETRIZACIÓN de USUARIOS
+    phone: Optional[str] = None
 
 class ForgotPasswordRequest(BaseModel):
     email: str
@@ -233,7 +236,7 @@ def login(req: LoginRequest):
     cursor = conn.cursor()
     # SuperAdmin no tiene tenant_id (NULL)
     cursor.execute(
-        "SELECT id, password_hash, role, tenant_id FROM users WHERE username = %s AND role = 'SuperAdmin'",
+        "SELECT id, password_hash, role, tenant_id, custom_role FROM users WHERE username = %s AND role = 'SuperAdmin'",
         (req.username,)
     )
     result = cursor.fetchone()
@@ -241,7 +244,7 @@ def login(req: LoginRequest):
     if not result:
         # Buscar en todos los tenants (username único por tenant)
         cursor.execute(
-            "SELECT id, password_hash, role, tenant_id FROM users WHERE username = %s AND role != 'SuperAdmin'",
+            "SELECT id, password_hash, role, tenant_id, custom_role FROM users WHERE username = %s AND role != 'SuperAdmin'",
             (req.username,)
         )
         result = cursor.fetchone()
@@ -255,7 +258,7 @@ def login(req: LoginRequest):
             role=result[2],
             tenant_id=result[3],
         )
-        return {"success": True, "token": token, "role": result[2], "username": req.username, "tenant_id": result[3]}
+        return {"success": True, "token": token, "role": result[2], "username": req.username, "tenant_id": result[3], "custom_role": result[4]}
     else:
         raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
 
@@ -446,12 +449,12 @@ def list_users(user: dict = Depends(require_admin_or_superadmin)):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT id, username, role, email FROM users WHERE tenant_id = %s ORDER BY username",
+        "SELECT id, username, role, email, custom_role, phone FROM users WHERE tenant_id = %s ORDER BY username",
         (tenant_id,)
     )
     rows = cursor.fetchall()
     conn.close()
-    return [{"id": r[0], "username": r[1], "role": r[2], "email": r[3]} for r in rows]
+    return [{"id": r[0], "username": r[1], "role": r[2], "email": r[3], "custom_role": r[4], "phone": r[5]} for r in rows]
 
 
 @app.post("/users")
@@ -471,14 +474,22 @@ def create_user(req: CreateUserRequest, user: dict = Depends(require_admin_or_su
         conn.close()
         raise HTTPException(status_code=400, detail="El usuario ya existe en esta instancia")
 
-    raw_password = _generate_password()
+    manual_password = bool(req.password and req.password.strip())
+    if not manual_password and not req.email:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Indicá un correo (para enviar la contraseña) o definí una contraseña manual")
+
+    raw_password = req.password.strip() if manual_password else _generate_password()
     hashed = bcrypt.hashpw(raw_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
     cursor.execute(
-        "INSERT INTO users (username, password_hash, role, tenant_id, email) VALUES (%s, %s, %s, %s, %s)",
-        (req.username, hashed, req.role, tenant_id, req.email)
+        "INSERT INTO users (username, password_hash, role, tenant_id, email, custom_role, phone) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+        (req.username, hashed, req.role, tenant_id, req.email, req.custom_role, req.phone)
     )
     conn.commit()
     conn.close()
+
+    if manual_password:
+        return {"success": True, "message": f"Usuario '{req.username}' creado con la contraseña definida."}
 
     # Enviar email con credenciales al nuevo usuario
     from email_service import send_welcome_email as _welcome
@@ -1261,7 +1272,120 @@ def get_categories(user: dict = Depends(get_current_user)):
     tenant_id = get_tenant_id(user)
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, name FROM categories WHERE tenant_id = %s", (tenant_id,))
+    cursor.execute("SELECT id, name FROM categories WHERE tenant_id = %s ORDER BY name", (tenant_id,))
     results = cursor.fetchall()
     conn.close()
     return [{"id": r[0], "name": r[1]} for r in results]
+
+
+class CategoryModel(BaseModel):
+    name: str
+
+
+@app.post("/categories")
+def add_category(req: CategoryModel, user: dict = Depends(get_current_user)):
+    tenant_id = get_tenant_id(user)
+    name = (req.name or '').strip().upper()
+    if not name:
+        raise HTTPException(status_code=400, detail="El nombre no puede estar vacío")
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id FROM categories WHERE name = %s AND tenant_id = %s", (name, tenant_id))
+        if cursor.fetchone():
+            raise HTTPException(status_code=400, detail="Esa categoría ya existe")
+        cursor.execute("INSERT INTO categories (name, tenant_id) VALUES (%s, %s) RETURNING id", (name, tenant_id))
+        new_id = cursor.fetchone()[0]
+        conn.commit()
+        return {"success": True, "id": new_id}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        conn.close()
+
+
+@app.put("/categories/{cat_id}")
+def update_category(cat_id: int, req: CategoryModel, user: dict = Depends(get_current_user)):
+    tenant_id = get_tenant_id(user)
+    name = (req.name or '').strip().upper()
+    if not name:
+        raise HTTPException(status_code=400, detail="El nombre no puede estar vacío")
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("UPDATE categories SET name = %s WHERE id = %s AND tenant_id = %s", (name, cat_id, tenant_id))
+        conn.commit()
+        return {"success": True}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        conn.close()
+
+
+@app.delete("/categories/{cat_id}")
+def delete_category(cat_id: int, user: dict = Depends(get_current_user)):
+    tenant_id = get_tenant_id(user)
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT COUNT(*) FROM providers WHERE category_id = %s AND tenant_id = %s", (cat_id, tenant_id))
+        if cursor.fetchone()[0] > 0:
+            raise HTTPException(status_code=400, detail="No se puede eliminar: hay proveedores usando esta categoría")
+        cursor.execute("SELECT COUNT(*) FROM expenses WHERE category_id = %s AND tenant_id = %s", (cat_id, tenant_id))
+        if cursor.fetchone()[0] > 0:
+            raise HTTPException(status_code=400, detail="No se puede eliminar: hay gastos registrados con esta categoría")
+        cursor.execute("DELETE FROM categories WHERE id = %s AND tenant_id = %s", (cat_id, tenant_id))
+        conn.commit()
+        return {"success": True}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        conn.close()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Parametrización (settings por tenant)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class SettingModel(BaseModel):
+    key: str
+    value: str
+
+
+@app.get("/settings")
+def get_settings(user: dict = Depends(get_current_user)):
+    tenant_id = get_tenant_id(user)
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT key, value FROM tenant_settings WHERE tenant_id = %s", (tenant_id,))
+    results = dict(cursor.fetchall())
+    conn.close()
+    return results
+
+
+@app.put("/settings")
+def put_setting(req: SettingModel, user: dict = Depends(get_current_user)):
+    tenant_id = get_tenant_id(user)
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            INSERT INTO tenant_settings (tenant_id, key, value) VALUES (%s, %s, %s)
+            ON CONFLICT (tenant_id, key) DO UPDATE SET value = EXCLUDED.value
+        ''', (tenant_id, req.key, req.value))
+        conn.commit()
+        return {"success": True}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        conn.close()

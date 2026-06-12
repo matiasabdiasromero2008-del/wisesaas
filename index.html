@@ -320,7 +320,7 @@
                     <form id="sale-form" autocomplete="off">
                         <div class="form-row">
                             <div class="input-group" style="flex:2"><label>CLIENTE</label><select id="sale-client" required></select></div>
-                            <div class="input-group"><label>DESCUENTO</label><div style="display: flex; gap: 8px;"><input type="number" id="sale-discount" value="0" min="0" step="any" style="flex: 1; min-width: 0;"><select id="sale-discount-type" style="width: 75px; min-width: 75px; padding: 10px 8px;"><option value="percent">%</option><option value="fixed">$</option></select></div></div>
+                            <div class="input-group param-field" data-param="sale-discount-group"><label>DESCUENTO</label><div style="display: flex; gap: 8px;"><input type="number" id="sale-discount" value="0" min="0" step="any" style="flex: 1; min-width: 0;"><select id="sale-discount-type" style="width: 75px; min-width: 75px; padding: 10px 8px;"><option value="percent">%</option><option value="fixed">$</option></select></div></div>
                             <div class="input-group"><label>FECHA Y HORA</label><input type="datetime-local" id="sale-date" required></div>
                         </div>
                         <div id="sale-items-container" style="margin-top: 15px;"></div>
@@ -416,7 +416,7 @@
                     <form id="client-form" autocomplete="off">
                         <div class="form-row">
                             <div class="input-group" style="flex:2;"><label>NOMBRE DEL CLIENTE</label><input type="text" id="client-name" required></div>
-                            <div class="input-group"><label>TELÉFONO</label><input type="tel" id="client-phone" placeholder="Ej: +54 11 1234-5678"></div>
+                            <div class="input-group param-field" data-param="client-phone"><label>TELÉFONO</label><input type="tel" id="client-phone" placeholder="Ej: +54 11 1234-5678"></div>
                         </div>
                         <button type="submit" class="btn primary"><span class="material-symbols-outlined">save</span> GUARDAR CLIENTE</button>
                         <div id="client-msg"></div>
@@ -441,6 +441,14 @@
                         <div class="form-row">
                             <div class="input-group"><label>NOMBRE DEL PROVEEDOR</label><input type="text" id="prov-name" required></div>
                             <div class="input-group"><label>CONCEPTO (CATEGORÍA)</label><select id="prov-cat" required></select></div>
+                        </div>
+                        <div class="form-row">
+                            <div class="input-group param-field" data-param="prov-phone" style="display:none;"><label>TELÉFONO</label><input type="tel" id="prov-phone" placeholder="Ej: +54 11 1234-5678"></div>
+                            <div class="input-group param-field" data-param="prov-location" style="display:none;"><label>UBICACIÓN</label><input type="text" id="prov-location"></div>
+                            <div class="input-group param-field" data-param="prov-delivery" style="display:none;"><label>PLAZO DE ENTREGA</label><input type="text" id="prov-delivery" placeholder="Ej: 48 hs"></div>
+                        </div>
+                        <div class="form-row">
+                            <div class="input-group param-field" data-param="prov-obs" style="display:none;"><label>OBSERVACIONES</label><input type="text" id="prov-obs"></div>
                         </div>
                         <label style="display:flex;align-items:center;gap:10px;margin:4px 0 16px;cursor:pointer;font-size:0.85rem;color:var(--text-muted);">
                             <input type="checkbox" id="prov-is-resale" style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer;">
@@ -544,10 +552,21 @@
                     <form id="create-user-form" autocomplete="off">
                         <div class="form-row">
                             <div class="input-group"><label>NOMBRE DE USUARIO</label><input type="text" id="new-user-username" required></div>
-                            <div class="input-group" style="flex:2;"><label>CORREO ELECTRÓNICO</label><input type="email" id="new-user-email" required></div>
+                            <div class="input-group" style="flex:2;"><label>CORREO ELECTRÓNICO</label><input type="email" id="new-user-email"></div>
                             <div class="input-group"><label>ROL</label><select id="new-user-role"><option value="Operator">Operator</option><option value="Admin">Admin</option></select></div>
                         </div>
-                        <p style="font-size:0.82rem;color:var(--text-muted);margin:8px 0 16px;">La contraseña se generará automáticamente y se enviará al correo del usuario.</p>
+                        <div class="form-row">
+                            <div class="input-group"><label>TELÉFONO (OPCIONAL)</label><input type="tel" id="new-user-phone"></div>
+                            <div class="input-group" style="flex:2;">
+                                <label>CONTRASEÑA</label>
+                                <select id="new-user-pass-mode">
+                                    <option value="auto">AUTOMÁTICA — se envía al correo</option>
+                                    <option value="manual">MANUAL — la defino yo</option>
+                                </select>
+                            </div>
+                            <div class="input-group" id="new-user-pass-group" style="display:none;"><label>CONTRASEÑA NUEVA</label><input type="text" id="new-user-password" minlength="6" placeholder="Mínimo 6 caracteres"></div>
+                        </div>
+                        <p style="font-size:0.82rem;color:var(--text-muted);margin:8px 0 16px;">Con contraseña automática, se genera y se envía al correo del usuario. Con manual, vos se la comunicás.</p>
                         <button type="submit" class="btn primary"><span class="material-symbols-outlined">person_add</span> CREAR USUARIO</button>
                         <div id="create-user-msg" style="margin-top:12px;"></div>
                     </form>
@@ -597,7 +616,7 @@
 </div>
 
 <datalist id="ingredients-list"></datalist>
-<script src="/static/app.js?v=3.3.0"></script>
+<script src="/static/app.js?v=3.4.0"></script>
 <script>
     function closeModal() { document.getElementById('detail-modal').style.display = 'none'; }
 

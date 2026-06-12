@@ -52,6 +52,8 @@ def init_db():
         ("email", "TEXT"),
         ("reset_token", "TEXT"),
         ("reset_token_expiry", "TIMESTAMP"),
+        ("custom_role", "TEXT"),
+        ("phone", "TEXT"),
     ]:
         try:
             cursor.execute(f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {col_def[0]} {col_def[1]};")
@@ -361,6 +363,16 @@ def init_db():
         conn.commit()
     except Exception:
         conn.rollback()
+
+    # ─── Tenant Settings (parametrización por instancia) ────────────────────────
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS tenant_settings (
+        tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE,
+        key TEXT NOT NULL,
+        value TEXT,
+        PRIMARY KEY (tenant_id, key)
+    )
+    ''')
 
     conn.commit()
 
