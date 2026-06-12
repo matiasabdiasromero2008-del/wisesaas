@@ -54,11 +54,19 @@ app.add_middleware(
 
 @app.on_event("startup")
 def startup_event():
-    try:
-        init_db()
-        logger.info("Base de datos multi-tenant inicializada.")
-    except Exception as e:
-        logger.error(f"Error DB: {e}")
+    # init_db corre en un hilo aparte para que el puerto se abra de inmediato.
+    # Si una migración espera un lock (instancia vieja todavía viva durante el
+    # deploy), el servidor igual arranca y Render no mata el deploy por timeout.
+    import threading
+
+    def _run_migrations():
+        try:
+            init_db()
+            logger.info("Base de datos multi-tenant inicializada.")
+        except Exception as e:
+            logger.error(f"Error DB: {e}")
+
+    threading.Thread(target=_run_migrations, daemon=True).start()
 
 
 # Frontend

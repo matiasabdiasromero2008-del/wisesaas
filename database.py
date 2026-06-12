@@ -13,6 +13,14 @@ def init_db():
     conn = get_connection()
     cursor = conn.cursor()
 
+    # Ninguna migración puede colgarse esperando un lock indefinidamente
+    # (p. ej. mientras la instancia vieja sigue viva durante un deploy).
+    try:
+        cursor.execute("SET lock_timeout = '8s'; SET statement_timeout = '60s';")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+
     # ─── Tenants (instancias de clientes) ───────────────────────────────────────
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS tenants (
