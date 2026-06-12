@@ -17,6 +17,79 @@ function toggleTheme() {
     if (saved === 'light') document.documentElement.setAttribute('data-theme', 'light');
 })();
 
+// ─── Combobox con búsqueda (convierte <select> en buscador) ──────────────────
+function _comboNorm(s) { return (s || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+function _comboScore(query, text) {
+    const q = _comboNorm(query), t = _comboNorm(text);
+    if (!q) return 1;
+    if (t.includes(q)) return 3;              // contiene la combinación exacta → primero
+    let i = 0;                                 // tiene las letras en orden (subsecuencia) → después
+    for (const ch of t) { if (ch === q[i]) i++; if (i === q.length) return 1; }
+    return 0;
+}
+function makeSearchable(sel) {
+    if (!sel || sel.dataset.searchable) return;
+    sel.dataset.searchable = '1';
+    const wrap = document.createElement('div'); wrap.className = 'combo-wrap';
+    sel.parentNode.insertBefore(wrap, sel); wrap.appendChild(sel);
+    sel.classList.add('combo-native');
+    const inp = document.createElement('input');
+    inp.type = 'text'; inp.className = 'combo-input'; inp.autocomplete = 'off';
+    inp.placeholder = 'Escribí para buscar...';
+    const list = document.createElement('div'); list.className = 'combo-list';
+    wrap.appendChild(inp); wrap.appendChild(list);
+    function render() {
+        const opts = [...sel.options].filter(o => o.value !== '');
+        const scored = opts.map(o => ({ o, s: _comboScore(inp.value, o.textContent) }))
+            .filter(x => x.s > 0).sort((a, b) => b.s - a.s);
+        list.innerHTML = scored.length
+            ? scored.map(x => `<div class="combo-item" data-v="${x.o.value}">${x.o.textContent}</div>`).join('')
+            : `<div class="combo-empty">Sin resultados</div>`;
+    }
+    inp.addEventListener('input', () => { sel.value = ''; list.style.display = 'block'; render(); });
+    inp.addEventListener('focus', () => { list.style.display = 'block'; render(); });
+    inp.addEventListener('blur', () => setTimeout(() => list.style.display = 'none', 150));
+    list.addEventListener('mousedown', e => {
+        const it = e.target.closest('.combo-item'); if (!it) return;
+        sel.value = it.dataset.v; inp.value = it.textContent; list.style.display = 'none';
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        sel.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    sel.addEventListener('change', () => {
+        const o = sel.options[sel.selectedIndex];
+        if (document.activeElement !== inp) inp.value = (o && o.value) ? o.textContent : '';
+    });
+    const form = sel.closest('form');
+    if (form) form.addEventListener('reset', () => setTimeout(() => { inp.value = ''; }, 0));
+}
+
+// ─── Buscador para tablas de historial ────────────────────────────────────────
+function addTableSearch(tbodyId, placeholder = 'Buscar por cualquier dato...') {
+    const tbody = document.getElementById(tbodyId);
+    if (!tbody) return;
+    const container = tbody.closest('.table-container');
+    if (!container) return;
+    if (container.previousElementSibling && container.previousElementSibling.classList && container.previousElementSibling.classList.contains('table-search-bar')) return;
+    const bar = document.createElement('div');
+    bar.className = 'table-search-bar';
+    bar.innerHTML = `<span class="material-symbols-outlined">search</span><input type="text" placeholder="${placeholder}" autocomplete="off">`;
+    container.parentNode.insertBefore(bar, container);
+    const inp = bar.querySelector('input');
+    inp.addEventListener('input', () => {
+        const q = _comboNorm(inp.value);
+        tbody.querySelectorAll('tr').forEach(tr => {
+            if (tr.classList.contains('ingredient-row')) return; // siguen a su fila padre
+            const match = !q || _comboNorm(tr.textContent).includes(q);
+            tr.style.display = match ? '' : 'none';
+            let next = tr.nextElementSibling;
+            while (next && next.classList.contains('ingredient-row')) {
+                if (!match) { next.style.display = 'none'; next.classList.remove('show'); }
+                next = next.nextElementSibling;
+            }
+        });
+    });
+}
+
 // ─── JWT Token Helpers ────────────────────────────────────────────────────────
 function getToken() { return localStorage.getItem('wise_token'); }
 function setToken(t) { localStorage.setItem('wise_token', t); }
@@ -64,6 +137,36 @@ function switchSection(secId, title) {
     if (secId === 'sec-proveedores') { loadCategories(); loadProviders(); }
     if (secId === 'sec-escandallos') { loadIngredientsCache().then(() => { loadEscandalloTable(); if (escCont && escCont.children.length === 0) addEscRow(); }); }
     if (secId === 'sec-usuarios') loadUsers();
+    if (secId === 'sec-almacen') loadWarehouse();
+    // Buscadores en historiales (se crean una sola vez por tabla)
+    const searchTargets = {
+        'sec-ventas': ['sales-history-tbody', 'Buscar por fecha, cliente, monto...'],
+        'sec-gastos': ['expenses-history-tbody', 'Buscar por fecha, proveedor, categoría...'],
+        'sec-ingresos': ['prodrun-tbody', 'Buscar por fecha o artículo...'],
+        'sec-clientes': ['clients-tbody', 'Buscar por nombre o teléfono...'],
+        'sec-proveedores': ['providers-tbody', 'Buscar por nombre, categoría, tipo...'],
+        'sec-escandallos': ['escandallo-tbody', 'Buscar por artículo, tipo, precio...'],
+        'sec-almacen': ['warehouse-tbody', 'Buscar insumo...'],
+    };
+    if (searchTargets[secId]) addTableSearch(searchTargets[secId][0], searchTargets[secId][1]);
+}
+
+async function loadWarehouse() {
+    const tbody = document.getElementById('warehouse-tbody');
+    tbody.innerHTML = `<tr class="skeleton-row"><td colspan="5"><div class="skeleton-bar"></div></td></tr><tr class="skeleton-row"><td colspan="5"><div class="skeleton-bar"></div></td></tr>`;
+    try {
+        const res = await apiFetch('/warehouse');
+        const data = await res.json();
+        tbody.innerHTML = data.length === 0
+            ? `<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">Todavía no hay insumos. Cargá gastos con la categoría INSUMOS y van a aparecer acá.</td></tr>`
+            : data.map(w => {
+                const low = w.stock <= 0;
+                const stockTag = low ? `<span class="tag tag-red">${w.stock}</span>` : `<span class="tag tag-green">${w.stock}</span>`;
+                return `<tr><td><strong>${w.name}</strong></td><td style="text-align:center;">${w.purchased}</td><td style="text-align:center;">${w.consumed}</td><td style="text-align:center;">${stockTag}</td><td style="text-align:right;">$${(w.last_cost || 0).toFixed(2)}</td></tr>`;
+            }).join('');
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--negative);padding:20px;">Error al cargar el almacén.</td></tr>`;
+    }
 }
 
 function showSASection(secId) {
@@ -143,11 +246,59 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
         setToken(data.token);
         currentUser = data;
         if (data.role === 'SuperAdmin') setupSuperAdmin();
-        else setupDashboard();
+        else bootAndShowDashboard();
     } else {
         errEl.textContent = 'ERROR DE ACCESO – Usuario o contraseña incorrectos';
     }
 });
+
+// ─── Pantalla de carga inicial (precarga de datos) ────────────────────────────
+const BOOT_QUOTES = [
+    ["El trabajo diario pone el 49% del esfuerzo, pero es el favor de Dios el 51% que inclina la balanza hacia el éxito.", "Máxima del Emprendedor"],
+    ["Los planes bien pensados pura ganancia traen; los que se hacen a las apuradas, van directo al fracaso.", "Rey Salomón (Proverbios 21:5)"],
+    ["Puedes obtener todo lo que deseas en los negocios si primero ayudas a suficientes personas a obtener lo que ellas necesitan.", "Zig Ziglar"],
+    ["Una meta de negocio sin un plan financiero ordenado es solamente un deseo en el aire.", "Dave Ramsey"],
+    ["Trata a tus clientes y proveedores como te gustaría ser tratado a ti; esa regla nunca pasa de moda.", "Mary Kay Ash (Fundadora de Mary Kay Cosmetics)"],
+    ["La integridad en los negocios es hacer lo correcto con tus números y tus cuentas, incluso cuando nadie te está mirando.", "C.S. Lewis"],
+    ["Los proyectos fracasan por falta de consejo, pero prosperan cuando escuchas las métricas correctas y las opiniones sabias.", "Libro de la Sabiduría (Proverbios 15:22)"],
+    ["No te canses de hacer las cosas bien en lo pequeño hoy; a su debido tiempo cosecharás los frutos de tu constancia.", "Apóstol Pablo (Gálatas 6:9)"],
+    ["Si nos enfocamos obsesivamente en ser mejores en lo que hacemos, el crecimiento del negocio se cuidará solo.", "S. Truett Cathy (Fundador de Chick-fil-A)"],
+    ["Los recursos y los talentos no se hicieron para enterrarse por miedo al mercado, sino para multiplicarse con buena administración.", "Principio de la Mayordomía"],
+];
+function _bootSetProgress(done, total) {
+    const pct = total ? Math.round(done / total * 100) : 100;
+    const arc = document.getElementById('boot-pie-arc');
+    const circ = 314.16;
+    if (arc) arc.style.strokeDashoffset = String(circ * (1 - pct / 100));
+    const t = document.getElementById('boot-pie-pct');
+    if (t) t.textContent = pct + '%';
+}
+async function bootAndShowDashboard() {
+    const loader = document.getElementById('boot-loader');
+    const [quote, author] = BOOT_QUOTES[Math.floor(Math.random() * BOOT_QUOTES.length)];
+    document.getElementById('boot-quote').textContent = `"${quote}"`;
+    document.getElementById('boot-quote-author').textContent = `— ${author}`;
+    _bootSetProgress(0, 1);
+    loader.style.display = 'flex';
+    // Precarga en paralelo de todos los datos de las planillas
+    const tasks = [
+        loadClientsDropdown(), loadStockDropdown(), loadSalesHistory(),
+        loadCategories(), loadProvidersDropdown(), loadExpensesHistory(),
+        loadProductsDropdown('prodrun-product'), loadProductionHistory(),
+        loadClients(), loadProviders(),
+        loadIngredientsCache().then(() => loadEscandalloTable()),
+        loadWarehouse(),
+    ];
+    let done = 0;
+    const total = tasks.length;
+    await Promise.allSettled(tasks.map(p => Promise.resolve(p).catch(() => {}).then(() => { done++; _bootSetProgress(done, total); })));
+    _bootSetProgress(total, total);
+    setTimeout(() => {
+        loader.classList.add('boot-hide');
+        setTimeout(() => { loader.style.display = 'none'; loader.classList.remove('boot-hide'); }, 450);
+        setupDashboard();
+    }, 350);
+}
 
 // ─── Logout ───────────────────────────────────────────────────────────────────
 function doLogout() { clearToken(); currentUser = null; showView('login-view'); }
@@ -164,7 +315,7 @@ document.getElementById('sa-logout-btn').addEventListener('click', doLogout);
         if (payload.exp && Date.now() / 1000 > payload.exp) { clearToken(); return; }
         currentUser = { token, username: payload.username, role: payload.role, tenant_id: payload.tenant_id };
         if (payload.role === 'SuperAdmin') setupSuperAdmin();
-        else setupDashboard();
+        else bootAndShowDashboard();
     } catch (e) { clearToken(); }
 })();
 
@@ -291,12 +442,19 @@ function setupDashboard() {
     const nav = document.getElementById('nav-links'); nav.innerHTML = '';
     if (currentUser.role === 'Admin') {
         addNav('donut_small', 'PERFORMANCE', 'sec-performance', true);
-        addNav('point_of_sale', 'VENTAS', 'sec-ventas');
-        addNav('receipt_long', 'GASTOS', 'sec-gastos');
-        addNav('conveyor_belt', 'INGRESOS', 'sec-ingresos');
-        addNav('person', 'CLIENTES', 'sec-clientes');
-        addNav('local_shipping', 'PROVEEDORES', 'sec-proveedores');
-        addNav('inventory_2', 'ARTÍCULOS', 'sec-escandallos');
+        addNavGroup('payments', 'CASHFLOW', [
+            { icon: 'point_of_sale', text: 'VENTAS', secId: 'sec-ventas' },
+            { icon: 'receipt_long', text: 'GASTOS', secId: 'sec-gastos' },
+        ]);
+        addNavGroup('contacts', 'DIRECTORIO', [
+            { icon: 'person', text: 'CLIENTES', secId: 'sec-clientes' },
+            { icon: 'local_shipping', text: 'PROVEEDORES', secId: 'sec-proveedores' },
+        ]);
+        addNavGroup('inventory', 'INVENTARIO', [
+            { icon: 'conveyor_belt', text: 'INGRESOS', secId: 'sec-ingresos' },
+            { icon: 'inventory_2', text: 'ARTÍCULOS', secId: 'sec-escandallos' },
+            { icon: 'warehouse', text: 'ALMACÉN', secId: 'sec-almacen' },
+        ]);
         addNav('manage_accounts', 'USUARIOS', 'sec-usuarios');
         switchSection('sec-performance', 'PERFORMANCE');
     } else {
@@ -313,6 +471,30 @@ function addNav(icon, text, secId, active = false) {
     if (active) a.classList.add('active');
     a.addEventListener('click', (e) => { e.preventDefault(); document.querySelectorAll('#nav-links a').forEach(l => l.classList.remove('active')); a.classList.add('active'); switchSection(secId, text); });
     li.appendChild(a); document.getElementById('nav-links').appendChild(li);
+}
+
+function addNavGroup(icon, text, children) {
+    const li = document.createElement('li');
+    li.className = 'nav-group';
+    const a = document.createElement('a'); a.href = '#';
+    a.innerHTML = `<span class="material-symbols-outlined">${icon}</span> ${text} <span class="material-symbols-outlined nav-group-arrow" style="margin-left:auto;font-size:1.1rem;">expand_more</span>`;
+    a.addEventListener('click', e => e.preventDefault());
+    const sub = document.createElement('ul');
+    sub.className = 'nav-submenu';
+    children.forEach(ch => {
+        const subLi = document.createElement('li');
+        const subA = document.createElement('a'); subA.href = '#';
+        subA.innerHTML = `<span class="material-symbols-outlined">${ch.icon}</span> ${ch.text}`;
+        subA.addEventListener('click', (e) => {
+            e.preventDefault();
+            document.querySelectorAll('#nav-links a').forEach(l => l.classList.remove('active'));
+            subA.classList.add('active'); a.classList.add('active');
+            switchSection(ch.secId, ch.text);
+        });
+        subLi.appendChild(subA); sub.appendChild(subLi);
+    });
+    li.appendChild(a); li.appendChild(sub);
+    document.getElementById('nav-links').appendChild(li);
 }
 
 // ─── User Management (Admin de instancia) ─────────────────────────────────────
@@ -573,7 +755,7 @@ async function loadClientsDropdown() {
     const res = await apiFetch('/clients');
     const data = await res.json();
     const el = document.getElementById('sale-client');
-    if (el) el.innerHTML = '<option value="">SELECCIONAR CLIENTE...</option>' + data.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
+    if (el) { el.innerHTML = '<option value="">SELECCIONAR CLIENTE...</option>' + data.map(c => `<option value="${c.name}">${c.name}</option>`).join(''); makeSearchable(el); }
 }
 async function loadStockDropdown() {
     const res = await apiFetch('/stock');
@@ -585,7 +767,9 @@ function addSaleRow(prodId = '', qty = '') {
     const row = document.createElement('div'); row.className = 'sale-row';
     row.style.cssText = 'display:grid;grid-template-columns:3fr 1fr 40px;gap:10px;margin-bottom:10px;';
     row.innerHTML = `<select class="sale-item-prod" required><option value="">SABOR...</option>${allStockProducts.map(p => `<option value="${p.id}" ${p.id == prodId ? 'selected' : ''}>${p.name}</option>`).join('')}</select><input type="number" class="sale-item-qty" placeholder="CANT." required value="${qty}"><button type="button" class="btn secondary outline remove-sale-item btn-icon"><span class="material-symbols-outlined">close</span></button>`;
-    saleCont.appendChild(row); updateSaleTotals();
+    saleCont.appendChild(row);
+    makeSearchable(row.querySelector('.sale-item-prod'));
+    updateSaleTotals();
 }
 if (document.getElementById('add-sale-item-btn')) document.getElementById('add-sale-item-btn').addEventListener('click', () => addSaleRow());
 if (saleCont) {
@@ -670,6 +854,7 @@ async function loadProvidersDropdown() {
     const res = await apiFetch('/providers'); allProviders = await res.json();
     const el = document.getElementById('exp-prov');
     if (el) {
+        makeSearchable(el);
         el.innerHTML = '<option value="">SELECCIONAR PROVEEDOR...</option>' + allProviders.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
         el.addEventListener('change', () => { const p = allProviders.find(x => x.id == el.value); if (p) document.getElementById('exp-cat').value = p.category; });
     }
@@ -794,7 +979,8 @@ async function loadProductionHistory() {
 }
 async function loadProductsDropdown(id) {
     const res = await apiFetch('/products'); const data = await res.json();
-    const el = document.getElementById(id); if (el) el.innerHTML = data.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+    const el = document.getElementById(id);
+    if (el) { el.innerHTML = '<option value="">SELECCIONAR ARTÍCULO...</option>' + data.map(p => `<option value="${p.id}">${p.name}</option>`).join(''); makeSearchable(el); }
 }
 document.getElementById('prodrun-form').addEventListener('submit', async (e) => {
     e.preventDefault();

@@ -724,6 +724,47 @@ def delete_provider(provider_id: int, user: dict = Depends(get_current_user)):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Almacén (stock de insumos comprados vía GASTOS)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.get("/warehouse")
+def get_warehouse(user: dict = Depends(get_current_user)):
+    tenant_id = get_tenant_id(user)
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name, last_unit_cost FROM ingredients WHERE tenant_id = %s ORDER BY name", (tenant_id,))
+    ings = cursor.fetchall()
+    result = []
+    for ing_id, name, cost in ings:
+        # Comprado: suma de cantidades en gastos de categoría INSUMOS con esa descripción
+        cursor.execute('''
+            SELECT COALESCE(SUM(ei.quantity), 0)
+            FROM expense_items ei
+            JOIN expenses e ON ei.expense_id = e.id
+            JOIN categories c ON e.category_id = c.id
+            WHERE e.tenant_id = %s AND c.name = 'INSUMOS'
+              AND UPPER(TRIM(ei.description)) = UPPER(TRIM(%s))
+        ''', (tenant_id, name))
+        purchased = cursor.fetchone()[0] or 0
+        # Consumido estimado: producción registrada × cantidad por lote ÷ rendimiento
+        cursor.execute('''
+            SELECT COALESCE(SUM(pr.quantity * pi.quantity_per_batch / NULLIF(p.yield_per_batch, 0)), 0)
+            FROM production_runs pr
+            JOIN products p ON pr.product_id = p.id
+            JOIN product_ingredients pi ON pi.product_id = p.id AND pi.ingredient_id = %s
+            WHERE pr.tenant_id = %s
+        ''', (ing_id, tenant_id))
+        consumed = cursor.fetchone()[0] or 0
+        result.append({
+            "id": ing_id, "name": name, "last_cost": cost or 0,
+            "purchased": round(purchased, 2), "consumed": round(consumed, 2),
+            "stock": round(purchased - consumed, 2),
+        })
+    conn.close()
+    return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Clientes
 # ─────────────────────────────────────────────────────────────────────────────
 

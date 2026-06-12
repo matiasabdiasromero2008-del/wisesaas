@@ -38,10 +38,14 @@
     <!-- ═══════════════════════════════════════════════════════════════════ -->
     <div id="login-view" class="view active">
         <div class="login-card glass">
-            <div class="wise-logo-container" style="margin-bottom:24px;">
+            <div class="wise-logo-container login-logo-anim" style="margin-bottom:24px;">
                 <img src="/static/logo-dark.png" alt="WISE" class="wise-logo-svg wise-logo-img-dark" onerror="this.style.display='none';this.parentElement.querySelector('.wise-logo-fallback').style.display='block';">
                 <img src="/static/logo-light.png" alt="WISE" class="wise-logo-svg wise-logo-img-light" onerror="this.style.display='none';this.parentElement.querySelector('.wise-logo-fallback').style.display='block';">
                 <span class="wise-logo-fallback" style="display:none;font-size:2rem;font-weight:800;letter-spacing:1px;color:var(--logo-color);">WISE</span>
+                <svg class="logo-draw-overlay" viewBox="0 0 240 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <polyline class="logo-draw-line" points="14,62 38,30 52,46 80,14 95,36 122,8" />
+                    <circle class="logo-draw-dot" cx="122" cy="8" r="4" />
+                </svg>
             </div>
             <p style="color:var(--text-muted);margin-bottom:28px;text-align:center;">Sistema de Gestión de Rentabilidad</p>
             <form id="login-form">
@@ -519,6 +523,20 @@
                 </div>
             </section>
 
+            <!-- ALMACÉN (stock de insumos) -->
+            <section id="sec-almacen" class="section">
+                <div class="card">
+                    <h3 style="display:flex;align-items:center;gap:8px;"><span class="material-symbols-outlined" style="color:var(--primary);">warehouse</span> STOCK DE INSUMOS</h3>
+                    <p style="color:var(--text-muted);font-size:0.85rem;margin:-10px 0 16px;">Insumos comprados a través de GASTOS (categoría INSUMOS). El consumo se estima según la producción registrada en INGRESOS.</p>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead><tr><th>INSUMO</th><th style="text-align:center;">COMPRADO</th><th style="text-align:center;">CONSUMIDO (EST.)</th><th style="text-align:center;">STOCK</th><th style="text-align:right;">ÚLTIMO COSTO UNIT.</th></tr></thead>
+                            <tbody id="warehouse-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
             <!-- USUARIOS (Admin de instancia) -->
             <section id="sec-usuarios" class="section">
                 <div class="card" style="margin-bottom:20px;">
@@ -562,8 +580,24 @@
     </div>
 </div>
 
+<!-- Pantalla de carga inicial -->
+<div id="boot-loader">
+    <div class="boot-center">
+        <svg viewBox="0 0 120 120" class="boot-pie">
+            <circle cx="60" cy="60" r="50" fill="none" stroke="var(--surface-border)" stroke-width="10"/>
+            <circle id="boot-pie-arc" cx="60" cy="60" r="50" fill="none" stroke="var(--primary)" stroke-width="10"
+                    stroke-linecap="round" stroke-dasharray="314.16" stroke-dashoffset="314.16"
+                    transform="rotate(-90 60 60)"/>
+            <text id="boot-pie-pct" x="60" y="66" text-anchor="middle" fill="var(--text-main)"
+                  font-family="'Outfit', sans-serif" font-weight="700" font-size="22">0%</text>
+        </svg>
+        <p id="boot-quote" class="boot-quote"></p>
+        <p id="boot-quote-author" class="boot-quote-author"></p>
+    </div>
+</div>
+
 <datalist id="ingredients-list"></datalist>
-<script src="/static/app.js?v=3.2.0"></script>
+<script src="/static/app.js?v=3.3.0"></script>
 <script>
     function closeModal() { document.getElementById('detail-modal').style.display = 'none'; }
 
