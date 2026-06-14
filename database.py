@@ -115,6 +115,7 @@ def init_db():
         ("tenant_id", "INTEGER REFERENCES tenants(id) ON DELETE CASCADE"),
         ("min_stock", "INTEGER DEFAULT 0"),
         ("article_type", "TEXT DEFAULT 'FORMULA'"),
+        ("subcat_group", "TEXT"),
     ]:
         try:
             cursor.execute(f"ALTER TABLE products ADD COLUMN IF NOT EXISTS {col[0]} {col[1]};")

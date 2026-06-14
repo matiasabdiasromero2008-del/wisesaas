@@ -3,6 +3,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 const API_URL = '';
 let currentUser = null;
+let tenantSettings = {};
 let allProviders = [], allIngredients = [], allClients = [], allStockProducts = [];
 let currentCtr = 0, currentTotalIngresos = 0, currentTotalGtr = 0, currentTotalEgresos = 0, currentRna = 0;
 
@@ -131,6 +132,7 @@ function switchSection(secId, title) {
     document.getElementById('view-title').textContent = title.toUpperCase();
     ensureTabs(secId);
     applyFieldParams(secId);
+    applyRolePerms(secId);
     if (secId === 'sec-performance') loadMetrics();
     if (secId === 'sec-ventas') { loadClientsDropdown(); loadStockDropdown(); loadSalesHistory(); setNow('sale-date'); }
     if (secId === 'sec-gastos') { loadCategories(); loadProvidersDropdown(); loadExpensesHistory(); setNow('exp-date'); if (expCont && expCont.children.length === 0) addExpRow(); }
@@ -303,6 +305,10 @@ async function bootAndShowDashboard() {
         loader.classList.add('boot-hide');
         setTimeout(() => { loader.style.display = 'none'; loader.classList.remove('boot-hide'); }, 450);
         setupDashboard();
+        // Tutorial de bienvenida la primera vez que el usuario entra
+        if (currentUser && currentUser.username && !localStorage.getItem('wise_tuto_seen_' + currentUser.username)) {
+            setTimeout(() => startTutorial(), 600);
+        }
     }, 350);
 }
 
@@ -604,9 +610,26 @@ async function loadEscandalloTable() {
         const res = await apiFetch('/products');
         if (!res.ok) throw new Error('Error al cargar artículos');
         const products = await res.json();
+        allProductsCache = products;
         tbody.innerHTML = '';
         if (products.length === 0) { tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:20px;">No hay artículos creados todavía.</td></tr>`; return; }
+        // Artículos subcategorizados: en la planilla se previsualiza solo el nombre del
+        // grupo; las variantes se ven con el desplegable.
+        const groupsMap = new Map();
+        const singles = [];
         for (const prod of products) {
+            if (prod.subcat_group) {
+                if (!groupsMap.has(prod.subcat_group)) groupsMap.set(prod.subcat_group, []);
+                groupsMap.get(prod.subcat_group).push(prod);
+            } else singles.push(prod);
+        }
+        let gi = 0;
+        for (const [grp, items] of groupsMap) {
+            const variantRows = items.map(p => `<tr class="ingredient-row row-sgrp-${gi}"><td></td><td style="padding-left:30px;color:var(--text-muted);"><span class="material-symbols-outlined" style="font-size:1rem;vertical-align:middle;">subdirectory_arrow_right</span> ${p.name}</td><td></td><td>-</td><td style="text-align:center;">${(p.min_stock && p.min_stock > 0) ? p.min_stock + ' u.' : '-'}</td><td>$${p.price.toFixed(2)}</td><td>$${(p.gpu || 0).toFixed(2)}</td><td style="white-space:nowrap;"><button class="btn secondary outline btn-icon" onclick="viewProduct(${p.id},'${(p.name||'').replace(/'/g,'')}',${p.price},${p.yield||1},${p.min_stock||0},'SIMPLE')" title="Ver"><span class="material-symbols-outlined">visibility</span></button></td></tr>`).join('');
+            tbody.innerHTML += `<tr class="group-header"><td style="text-align:center;"><span class="material-symbols-outlined toggle-btn" onclick="toggleGrp(${gi},this)">expand_more</span></td><td><strong>${grp}</strong> <span class="tag tag-purple" style="font-size:0.7rem;">SUBCATEGORIZADO · ${items.length}</span></td><td><span class="tag tag-blue" style="font-size:0.7rem;">SIMPLE</span></td><td>-</td><td style="text-align:center;">-</td><td>-</td><td>-</td><td></td></tr>${variantRows}`;
+            gi++;
+        }
+        for (const prod of singles) {
             const isSimple = (prod.article_type === 'SIMPLE');
             let ingredients = [];
             if (!isSimple) {
@@ -628,6 +651,8 @@ async function loadEscandalloTable() {
 }
 
 function toggleIng(id, el) { document.querySelectorAll(`.row-prod-${id}`).forEach(r => r.classList.toggle('show')); el.textContent = el.textContent === 'expand_more' ? 'expand_less' : 'expand_more'; }
+function toggleGrp(gi, el) { document.querySelectorAll(`.row-sgrp-${gi}`).forEach(r => r.classList.toggle('show')); el.textContent = el.textContent === 'expand_more' ? 'expand_less' : 'expand_more'; }
+let allProductsCache = [];
 
 const escCont = document.getElementById('esc-items-container');
 function addEscRow(name = '', qty = '') {
@@ -668,13 +693,16 @@ function setArticleType(type) {
     document.getElementById('esc-formula-section').style.display = isSimple ? 'none' : '';
     document.getElementById('esc-simple-note').style.display = isSimple ? '' : 'none';
     document.getElementById('esc-cogs-section').style.display = isSimple ? 'none' : '';
+    updateSubcatVisibility();
 }
 document.getElementById('article-type-formula-btn').addEventListener('click', () => setArticleType('FORMULA'));
 document.getElementById('article-type-simple-btn').addEventListener('click', () => setArticleType('SIMPLE'));
 setArticleType('FORMULA');
 
+let editingProductSubcat = null;
 function editProduct(id, name, price, yld, minStock, articleType) {
     editingProductId = id;
+    editingProductSubcat = ((allProductsCache.find(p => p.id === id) || {}).subcat_group) || null;
     document.getElementById('esc-sabor').value = name;
     document.getElementById('esc-sale-price').value = price;
     document.getElementById('esc-yield').value = yld;
@@ -688,7 +716,7 @@ function editProduct(id, name, price, yld, minStock, articleType) {
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
-document.getElementById('cancel-edit-product-btn').addEventListener('click', () => { editingProductId = null; document.getElementById('escandallo-form').reset(); document.getElementById('esc-min-stock').value = 0; escCont.innerHTML = ''; addEscRow(); updateEscTotals(); setArticleType('FORMULA'); document.getElementById('cancel-edit-product-btn').style.display = 'none'; });
+document.getElementById('cancel-edit-product-btn').addEventListener('click', () => { editingProductId = null; editingProductSubcat = null; document.getElementById('escandallo-form').reset(); document.getElementById('esc-min-stock').value = 0; escCont.innerHTML = ''; addEscRow(); updateEscTotals(); setArticleType('FORMULA'); document.getElementById('cancel-edit-product-btn').style.display = 'none'; });
 document.getElementById('escandallo-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const submitBtn = e.target.querySelector('button[type="submit"]');
@@ -701,6 +729,11 @@ document.getElementById('escandallo-form').addEventListener('submit', async (e) 
     const minStock = parseInt(document.getElementById('esc-min-stock').value) || 0;
     const articleType = document.getElementById('esc-type-simple').checked ? 'SIMPLE' : 'FORMULA';
     const isSimple = (articleType === 'SIMPLE');
+    // SUBCATEGORIZACIÓN: si está activa, se crea un artículo por cada combinación de variables
+    if (!editingProductId && isSimple && subcatFormActive()) {
+        await handleSubcatSubmit(sabor, price, minStock, submitBtn, originalHtml, e.target);
+        return;
+    }
     let productId = editingProductId;
     try {
         if (!productId) {
@@ -714,7 +747,7 @@ document.getElementById('escandallo-form').addEventListener('submit', async (e) 
             productId = createData.id;
             if (!productId) throw new Error('No se pudo obtener el ID del artículo creado');
         } else {
-            const updRes = await apiFetch(`/products/${productId}`, { method: 'PUT', body: JSON.stringify({ flavor_name: sabor, sale_price: price, yield_per_batch: yld, min_stock: minStock, article_type: articleType }) });
+            const updRes = await apiFetch(`/products/${productId}`, { method: 'PUT', body: JSON.stringify({ flavor_name: sabor, sale_price: price, yield_per_batch: yld, min_stock: minStock, article_type: articleType, subcat_group: editingProductSubcat }) });
             if (!updRes.ok) {
                 let errMsg = 'Error al actualizar el artículo';
                 try { const errData = await updRes.json(); errMsg = errData.detail || errMsg; } catch(_) {}
@@ -750,7 +783,7 @@ document.getElementById('escandallo-form').addEventListener('submit', async (e) 
             submitBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:1.1rem;vertical-align:middle;">check</span> ¡ARTÍCULO GUARDADO!';
             setTimeout(() => {
                 submitBtn.disabled = false; submitBtn.style.background = ''; submitBtn.style.color = ''; submitBtn.innerHTML = originalHtml;
-                e.target.reset(); escCont.innerHTML = ''; addEscRow(); editingProductId = null; setArticleType('FORMULA'); document.getElementById('cancel-edit-product-btn').style.display = 'none'; loadEscandalloTable();
+                e.target.reset(); escCont.innerHTML = ''; addEscRow(); editingProductId = null; editingProductSubcat = null; setArticleType('FORMULA'); document.getElementById('cancel-edit-product-btn').style.display = 'none'; loadEscandalloTable();
                 const m = document.getElementById('esc-msg'); m.textContent = 'ARTÍCULO GUARDADO'; m.className = 'success-msg'; setTimeout(() => m.textContent = '', 3000);
             }, 1500);
         }
@@ -800,7 +833,9 @@ const saleCont = document.getElementById('sale-items-container');
 function addSaleRow(prodId = '', qty = '') {
     const row = document.createElement('div'); row.className = 'sale-row';
     row.style.cssText = 'display:grid;grid-template-columns:3fr 1fr 40px;gap:10px;margin-bottom:10px;';
-    row.innerHTML = `<select class="sale-item-prod" required><option value="">SABOR...</option>${allStockProducts.map(p => `<option value="${p.id}" ${p.id == prodId ? 'selected' : ''}>${p.name}</option>`).join('')}</select><input type="number" class="sale-item-qty" placeholder="CANT." required value="${qty}"><button type="button" class="btn secondary outline remove-sale-item btn-icon"><span class="material-symbols-outlined">close</span></button>`;
+    // Solo se pueden vender artículos que existen en el stock disponible (stock > 0)
+    const sellable = allStockProducts.filter(p => (p.stock || 0) > 0 || p.id == prodId);
+    row.innerHTML = `<select class="sale-item-prod" required><option value="">SABOR...</option>${sellable.map(p => `<option value="${p.id}" ${p.id == prodId ? 'selected' : ''}>${p.name} (${p.stock} u.)</option>`).join('')}</select><input type="number" class="sale-item-qty" placeholder="CANT." required value="${qty}"><button type="button" class="btn secondary outline remove-sale-item btn-icon"><span class="material-symbols-outlined">close</span></button>`;
     saleCont.appendChild(row);
     makeSearchable(row.querySelector('.sale-item-prod'));
     updateSaleTotals();
@@ -1329,7 +1364,6 @@ async function calculateAndRenderMetrics(targetMonth, sales, expenses, products)
 // PARAMETRIZACIÓN, TABS, ROLES y MIGRAR DATOS
 // ═════════════════════════════════════════════════════════════════════════════
 
-let tenantSettings = {};
 async function loadSettings() {
     try { const r = await apiFetch('/settings'); if (r.ok) tenantSettings = await r.json(); } catch (e) {}
 }
@@ -1412,6 +1446,45 @@ function getRoles() {
     try { return JSON.parse(tenantSettings['roles'] || '[]'); } catch (e) { return []; }
 }
 
+// ─── Permisos efectivos del usuario logueado (rol personalizado) ──────────────
+function getMyPerms() {
+    if (!currentUser || currentUser.role === 'Admin' || currentUser.role === 'SuperAdmin') return null;
+    if (!currentUser.custom_role) return null;
+    const r = getRoles().find(x => x.name === currentUser.custom_role);
+    return r ? (r.perms || {}) : null;
+}
+
+// Oculta dentro de la planilla activa todo lo que el rol no tiene habilitado:
+// formulario de registro, historial, botones VER/EDITAR/ELIMINAR y los tabs de
+// PARAMETRIZACIÓN / MIGRAR DATOS (requieren la función "param" del rol).
+function applyRolePerms(secId) {
+    document.body.classList.remove('perm-no-ver', 'perm-no-edit', 'perm-no-del');
+    const sec = document.getElementById(secId);
+    if (!sec) return;
+    sec.classList.remove('perm-no-reg', 'perm-no-hist');
+    const perms = getMyPerms();
+    if (!perms) return; // Admin / Operator sin rol personalizado: sin restricciones extra
+    const plDef = PERM_TREE.find(x => x.sec === secId);
+    if (!plDef) return; // secciones fuera del árbol de permisos (ej: usuarios) no aplican
+    const p = perms[secId] || {};
+    const funcs = p.funcs || {};
+    const hasRegFunc = plDef.funcs.some(f => f.k === 'registrar');
+    const regOn = !!(funcs.registrar && funcs.registrar.on);
+    const hist = funcs.historial || {};
+    const subs = hist.subs || {};
+    const paramOn = !!(funcs.param && funcs.param.on);
+    sec.classList.toggle('perm-no-reg', hasRegFunc && !regOn);
+    sec.classList.toggle('perm-no-hist', !hist.on);
+    if (hist.on) {
+        if (!subs.VER) document.body.classList.add('perm-no-ver');
+        if (!subs.EDITAR) document.body.classList.add('perm-no-edit');
+        if (!subs.ELIMINAR) document.body.classList.add('perm-no-del');
+    }
+    sec.querySelectorAll(':scope > .section-tabs .section-tab').forEach(t => {
+        if (t.dataset.tab !== 'funciones') t.style.display = paramOn ? '' : 'none';
+    });
+}
+
 // ─── Sistema de TABS por sección ──────────────────────────────────────────────
 const TABBED_SECTIONS = ['sec-ventas', 'sec-gastos', 'sec-ingresos', 'sec-clientes', 'sec-proveedores', 'sec-escandallos', 'sec-almacen', 'sec-usuarios'];
 
@@ -1467,6 +1540,7 @@ function renderParamPanel(secId, panel) {
     html += `</div>`;
     if (secId === 'sec-proveedores') html += `<div class="card" id="cats-manager"></div>`;
     if (secId === 'sec-usuarios') html += `<div class="card" id="roles-manager"></div>`;
+    if (secId === 'sec-escandallos') html += `<div class="card" id="subcat-manager"></div>`;
     panel.innerHTML = html;
     panel.querySelectorAll('[data-pf]').forEach(chk => {
         chk.addEventListener('change', () => {
@@ -1492,6 +1566,7 @@ function renderParamPanel(secId, panel) {
     });
     if (secId === 'sec-proveedores') renderCatsManager(document.getElementById('cats-manager'));
     if (secId === 'sec-usuarios') renderRolesManager(document.getElementById('roles-manager'));
+    if (secId === 'sec-escandallos') renderSubcatManager(document.getElementById('subcat-manager'));
 }
 
 // ─── Gestor de CATEGORÍAS (PROVEEDORES → PARAMETRIZACIÓN) ─────────────────────
@@ -1767,4 +1842,387 @@ async function importCSV(secId, text) {
         document.getElementById('new-user-pass-group').style.display = sel.value === 'manual' ? '' : 'none';
     });
 })();
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SUBCATEGORIZACIÓN DE ARTÍCULOS (solo ARTÍCULOS SIMPLES)
+// ═════════════════════════════════════════════════════════════════════════════
+
+function subcatEnabled() { return tenantSettings['subcat_enabled'] === '1'; }
+function getBaseVars() {
+    try { return JSON.parse(tenantSettings['base_variables'] || '[]'); } catch (e) { return []; }
+}
+async function saveBaseVars(list) { await saveSetting('base_variables', JSON.stringify(list)); }
+
+// ─── Gestor en ARTÍCULOS → PARAMETRIZACIÓN ────────────────────────────────────
+function renderSubcatManager(box) {
+    if (!box) return;
+    const on = subcatEnabled();
+    const vars = getBaseVars();
+    box.innerHTML = `
+        <h3 style="display:flex;align-items:center;gap:8px;"><span class="material-symbols-outlined" style="color:var(--primary);">account_tree</span> SUBCATEGORIZACIÓN DE ARTÍCULOS</h3>
+        <p style="color:var(--text-muted);font-size:0.85rem;margin-top:-10px;">Permite englobar varios productos de una misma naturaleza usando VARIABLES (ej: REMERA NIKE con variable COLOR: rojo, blanco, negro). Solo aplica a ARTÍCULOS SIMPLES.</p>
+        <div class="param-row">
+            <label class="param-check">
+                <input type="checkbox" id="subcat-enable-chk" ${on ? 'checked' : ''}>
+                <div><strong>ACTIVAR SUBCATEGORIZACIÓN</strong><p>Al crear un artículo SIMPLE vas a poder marcarlo como SUBCATEGORIZADO y definir hasta 2 variables.</p></div>
+            </label>
+        </div>
+        <div id="subcat-basevars" style="display:${on ? 'block' : 'none'};margin-top:14px;">
+            <h4 style="margin:0 0 6px;">VARIABLES BASE</h4>
+            <p style="color:var(--text-muted);font-size:0.82rem;margin:0 0 12px;">Variables guardadas que vas a poder reutilizar al crear artículos subcategorizados.</p>
+            <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+                <input type="text" id="new-bv-name" placeholder="NOMBRE (ej: TALLE)..." style="flex:1;min-width:140px;">
+                <input type="text" id="new-bv-values" placeholder="VALORES separados por coma (ej: S, M, L, XL)..." style="flex:2;min-width:200px;">
+                <button class="btn primary" id="add-bv-btn"><span class="material-symbols-outlined">add</span> AGREGAR</button>
+            </div>
+            <div id="bv-list">${vars.map((v, i) => `
+                <div class="cat-row" data-i="${i}">
+                    <strong style="min-width:110px;">${v.name}</strong>
+                    <input type="text" value="${(v.values || []).join(', ')}" class="bv-values-inp" style="flex:1;">
+                    <button class="btn secondary outline btn-icon bv-save" title="Guardar"><span class="material-symbols-outlined">check</span></button>
+                    <button class="btn secondary outline btn-icon bv-del" title="Eliminar" style="color:var(--negative);"><span class="material-symbols-outlined">delete</span></button>
+                </div>`).join('') || '<p style="color:var(--text-muted);font-size:0.82rem;">Todavía no hay variables base guardadas.</p>'}</div>
+        </div>`;
+    box.querySelector('#subcat-enable-chk').addEventListener('change', async (e) => {
+        await saveSetting('subcat_enabled', e.target.checked ? '1' : '0');
+        box.querySelector('#subcat-basevars').style.display = e.target.checked ? 'block' : 'none';
+        updateSubcatVisibility();
+    });
+    const addBtn = box.querySelector('#add-bv-btn');
+    if (addBtn) addBtn.addEventListener('click', async () => {
+        const name = box.querySelector('#new-bv-name').value.trim().toUpperCase();
+        const values = box.querySelector('#new-bv-values').value.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+        if (!name || !values.length) return;
+        const vars2 = getBaseVars().filter(v => v.name !== name);
+        vars2.push({ name, values });
+        await saveBaseVars(vars2);
+        renderSubcatManager(box); renderSubcatForm();
+    });
+    box.querySelectorAll('#bv-list .cat-row').forEach(row => {
+        const i = parseInt(row.dataset.i);
+        row.querySelector('.bv-save').addEventListener('click', async () => {
+            const vars2 = getBaseVars();
+            vars2[i].values = row.querySelector('.bv-values-inp').value.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+            await saveBaseVars(vars2);
+            renderSubcatManager(box); renderSubcatForm();
+        });
+        row.querySelector('.bv-del').addEventListener('click', async () => {
+            if (!confirm('¿Eliminar esta variable base?')) return;
+            const vars2 = getBaseVars(); vars2.splice(i, 1);
+            await saveBaseVars(vars2);
+            renderSubcatManager(box); renderSubcatForm();
+        });
+    });
+}
+
+// ─── UI dentro del formulario de NUEVO ARTÍCULO ───────────────────────────────
+function updateSubcatVisibility() {
+    const block = document.getElementById('esc-subcat-block');
+    if (!block) return;
+    const isSimple = document.getElementById('esc-type-simple').checked;
+    const show = isSimple && subcatEnabled() && !editingProductId;
+    block.style.display = show ? '' : 'none';
+    if (show && !block.dataset.rendered) renderSubcatForm();
+    if (!show) {
+        const chk = document.getElementById('esc-subcat-on');
+        if (chk) { chk.checked = false; const cfg = document.getElementById('esc-subcat-config'); if (cfg) cfg.style.display = 'none'; }
+    }
+}
+
+function _subcatSlotHtml(i, removable) {
+    const baseOpts = getBaseVars().map(v => `<option value="${v.name}">${v.name}</option>`).join('');
+    return `<div class="form-row subcat-slot" data-i="${i}" style="align-items:flex-end;">
+        <div class="input-group"><label>VARIABLE ${i + 1}</label><select class="subcat-var-sel">
+            <option value="">SELECCIONAR...</option>${baseOpts}<option value="__new__">➕ NUEVA VARIABLE (manual)</option>
+        </select></div>
+        <div class="input-group subcat-name-group" style="display:none;"><label>NOMBRE DE LA VARIABLE</label><input type="text" class="subcat-var-name" placeholder="Ej: COLOR"></div>
+        <div class="input-group" style="flex:2;"><label>VALORES (separados por coma)</label><input type="text" class="subcat-var-values" placeholder="Ej: ROJO, BLANCO, NEGRO"></div>
+        ${removable ? `<button type="button" class="btn secondary outline btn-icon subcat-slot-del" style="margin-bottom:2px;" title="Quitar variable"><span class="material-symbols-outlined">close</span></button>` : ''}
+    </div>`;
+}
+
+function renderSubcatForm() {
+    const block = document.getElementById('esc-subcat-block');
+    if (!block) return;
+    block.dataset.rendered = '1';
+    block.innerHTML = `
+        <div style="border:1px dashed var(--primary);border-radius:10px;padding:14px 16px;margin-bottom:16px;">
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:0.85rem;color:var(--text-muted);">
+                <input type="checkbox" id="esc-subcat-on" style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer;">
+                <span><strong style="color:var(--text-main);">ARTÍCULO SUBCATEGORIZADO</strong> — generá varias versiones de este artículo combinando hasta 2 variables (ej: color y talle)</span>
+            </label>
+            <div id="esc-subcat-config" style="display:none;margin-top:14px;">
+                <div id="subcat-slots">${_subcatSlotHtml(0, false)}</div>
+                <button type="button" class="btn secondary outline" id="subcat-add-var" style="width:auto;"><span class="material-symbols-outlined">add</span> AGREGAR SEGUNDA VARIABLE</button>
+                <div id="subcat-matrix" style="margin-top:14px;"></div>
+                <div id="subcat-preview" style="margin-top:10px;font-size:0.82rem;color:var(--text-muted);"></div>
+            </div>
+        </div>`;
+    const chk = block.querySelector('#esc-subcat-on');
+    chk.addEventListener('change', () => {
+        block.querySelector('#esc-subcat-config').style.display = chk.checked ? 'block' : 'none';
+        refreshSubcatCombos();
+    });
+    block.querySelector('#subcat-add-var').addEventListener('click', () => {
+        const slots = block.querySelectorAll('.subcat-slot');
+        if (slots.length >= 2) return;
+        block.querySelector('#subcat-slots').insertAdjacentHTML('beforeend', _subcatSlotHtml(1, true));
+        block.querySelector('#subcat-add-var').style.display = 'none';
+        refreshSubcatCombos();
+    });
+    // Listeners delegados: se adjuntan una sola vez aunque el bloque se re-renderice
+    if (!block.dataset.delegated) {
+        block.dataset.delegated = '1';
+        block.addEventListener('click', e => {
+            const del = e.target.closest('.subcat-slot-del');
+            if (del) {
+                const slot = del.closest('.subcat-slot');
+                if (slot && slot.parentNode) slot.remove();
+                const addBtn = block.querySelector('#subcat-add-var');
+                if (addBtn) addBtn.style.display = '';
+                refreshSubcatCombos();
+            }
+        });
+        block.addEventListener('change', e => {
+            if (e.target.classList.contains('subcat-var-sel')) {
+                const slot = e.target.closest('.subcat-slot');
+                const isNew = e.target.value === '__new__';
+                slot.querySelector('.subcat-name-group').style.display = isNew ? '' : 'none';
+                const valInp = slot.querySelector('.subcat-var-values');
+                if (isNew) { valInp.value = ''; }
+                else {
+                    const bv = getBaseVars().find(v => v.name === e.target.value);
+                    valInp.value = bv ? bv.values.join(', ') : '';
+                }
+                refreshSubcatCombos();
+            }
+        });
+        block.addEventListener('input', e => {
+            if (e.target.classList.contains('subcat-var-values') || e.target.classList.contains('subcat-var-name')) refreshSubcatCombos();
+        });
+    }
+}
+
+// El nombre del artículo forma parte de la previsualización de variantes
+(function () {
+    const inp = document.getElementById('esc-sabor');
+    if (inp) inp.addEventListener('input', () => { if (subcatFormActive()) updateSubcatPreview(); });
+})();
+
+function subcatFormActive() {
+    const chk = document.getElementById('esc-subcat-on');
+    return !!(chk && chk.checked && subcatEnabled());
+}
+
+function getSubcatSlotData() {
+    const slots = [...document.querySelectorAll('#esc-subcat-block .subcat-slot')];
+    return slots.map(slot => {
+        const sel = slot.querySelector('.subcat-var-sel').value;
+        const name = sel === '__new__' ? slot.querySelector('.subcat-var-name').value.trim().toUpperCase() : sel;
+        const values = slot.querySelector('.subcat-var-values').value.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+        return { isNew: sel === '__new__', name, values };
+    }).filter(s => s.name && s.values.length);
+}
+
+function refreshSubcatCombos() {
+    const matrixBox = document.getElementById('subcat-matrix');
+    const preview = document.getElementById('subcat-preview');
+    if (!matrixBox || !preview) return;
+    const slots = getSubcatSlotData();
+    if (slots.length === 2) {
+        // Grilla de combinaciones: filas = variable 1, columnas = variable 2
+        const [v1, v2] = slots;
+        matrixBox.innerHTML = `
+            <p style="font-size:0.82rem;color:var(--text-muted);margin:0 0 8px;">Marcá qué combinaciones existen de este producto:</p>
+            <button type="button" class="btn secondary outline" id="subcat-check-all" style="width:auto;margin-bottom:10px;font-size:0.78rem;padding:6px 12px;"><span class="material-symbols-outlined" style="font-size:1rem;">done_all</span> TODAS LAS COMBINACIONES EXISTEN</button>
+            <div class="table-container" style="overflow-x:auto;">
+            <table class="data-table subcat-matrix-table"><thead><tr><th>${v1.name} \\ ${v2.name}</th>${v2.values.map(c => `<th style="text-align:center;">${c}</th>`).join('')}</tr></thead>
+            <tbody>${v1.values.map(r => `<tr><td><strong>${r}</strong></td>${v2.values.map(c => `<td style="text-align:center;"><input type="checkbox" class="subcat-cell" data-r="${r}" data-c="${c}" style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer;"></td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+        matrixBox.querySelector('#subcat-check-all').addEventListener('click', () => {
+            const cells = [...matrixBox.querySelectorAll('.subcat-cell')];
+            const allOn = cells.every(c => c.checked);
+            cells.forEach(c => c.checked = !allOn);
+            updateSubcatPreview();
+        });
+        matrixBox.addEventListener('change', updateSubcatPreview);
+    } else {
+        matrixBox.innerHTML = '';
+    }
+    updateSubcatPreview();
+}
+
+function getSubcatCombos() {
+    const slots = getSubcatSlotData();
+    if (!slots.length) return [];
+    if (slots.length === 1) return slots[0].values.slice();
+    const checked = [...document.querySelectorAll('#subcat-matrix .subcat-cell:checked')];
+    return checked.map(c => `${c.dataset.r} / ${c.dataset.c}`);
+}
+
+function updateSubcatPreview() {
+    const preview = document.getElementById('subcat-preview');
+    if (!preview) return;
+    const name = (document.getElementById('esc-sabor').value || 'ARTÍCULO').trim().toUpperCase();
+    const combos = getSubcatCombos();
+    preview.innerHTML = combos.length
+        ? `Se van a crear <strong style="color:var(--primary);">${combos.length}</strong> artículos: ${combos.slice(0, 6).map(c => `<span class="tag tag-blue" style="margin:2px;">${name} - ${c}</span>`).join('')}${combos.length > 6 ? ` <span class="tag">+${combos.length - 6} más</span>` : ''}`
+        : 'Definí una variable con valores (y marcá combinaciones si usás dos variables).';
+}
+
+async function maybeSaveManualVariables() {
+    const slots = getSubcatSlotData();
+    let vars = getBaseVars();
+    let changed = false;
+    for (const s of slots) {
+        if (!s.isNew) continue;
+        if (vars.some(v => v.name === s.name)) continue;
+        if (confirm(`¿Deseás que guardemos la variable "${s.name}" (${s.values.join(', ')}) para futuros artículos?`)) {
+            vars.push({ name: s.name, values: s.values });
+            changed = true;
+        }
+    }
+    if (changed) await saveBaseVars(vars);
+}
+
+async function handleSubcatSubmit(sabor, price, minStock, submitBtn, originalHtml, form) {
+    const m = document.getElementById('esc-msg');
+    const combos = getSubcatCombos();
+    if (!combos.length) {
+        m.textContent = 'Definí al menos una variable con valores (y marcá combinaciones en la grilla si usás dos).';
+        m.className = 'error-msg'; setTimeout(() => m.textContent = '', 5000);
+        submitBtn.disabled = false; submitBtn.innerHTML = originalHtml;
+        return;
+    }
+    try {
+        await maybeSaveManualVariables();
+        let ok = 0; const errs = [];
+        for (const label of combos) {
+            const res = await apiFetch('/products', { method: 'POST', body: JSON.stringify({
+                flavor_name: `${sabor} - ${label}`, sale_price: price, yield_per_batch: 1,
+                min_stock: minStock, article_type: 'SIMPLE', subcat_group: sabor
+            }) });
+            if (res.ok) ok++;
+            else { try { const d = await res.json(); errs.push(`${label}: ${d.detail || 'error'}`); } catch (_) { errs.push(label); } }
+        }
+        if (ok > 0) {
+            submitBtn.style.background = 'var(--positive)'; submitBtn.style.color = 'white';
+            submitBtn.innerHTML = `<span class="material-symbols-outlined" style="font-size:1.1rem;vertical-align:middle;">check</span> ¡${ok} ARTÍCULOS CREADOS!`;
+            m.textContent = `Se crearon ${ok} artículos del grupo "${sabor}"${errs.length ? ` (${errs.length} con error)` : ''}.`;
+            m.className = errs.length ? 'error-msg' : 'success-msg';
+            setTimeout(() => {
+                submitBtn.disabled = false; submitBtn.style.background = ''; submitBtn.style.color = ''; submitBtn.innerHTML = originalHtml;
+                form.reset(); escCont.innerHTML = ''; addEscRow(); setArticleType('FORMULA');
+                const blk = document.getElementById('esc-subcat-block'); if (blk) { delete blk.dataset.rendered; blk.innerHTML = ''; }
+                loadEscandalloTable();
+                setTimeout(() => m.textContent = '', 5000);
+            }, 1600);
+        } else {
+            m.textContent = `No se pudo crear ningún artículo. ${errs.slice(0, 2).join(' / ')}`;
+            m.className = 'error-msg'; setTimeout(() => m.textContent = '', 6000);
+            submitBtn.disabled = false; submitBtn.innerHTML = originalHtml;
+        }
+    } catch (err) {
+        m.textContent = err.message || 'Error inesperado'; m.className = 'error-msg'; setTimeout(() => m.textContent = '', 5000);
+        submitBtn.disabled = false; submitBtn.innerHTML = originalHtml;
+    }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// GLOBO DE AYUDA / SOPORTE
+// ═════════════════════════════════════════════════════════════════════════════
+
+function toggleHelpPanel() {
+    const p = document.getElementById('help-panel');
+    if (p) p.classList.toggle('open');
+}
+document.addEventListener('click', e => {
+    if (!e.target.closest('#help-bubble') && !e.target.closest('#help-panel')) {
+        const p = document.getElementById('help-panel');
+        if (p) p.classList.remove('open');
+    }
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// TUTORIAL DE PRIMER INGRESO
+// ═════════════════════════════════════════════════════════════════════════════
+
+const TUTO_STEPS = [
+    { icon: 'waving_hand', title: '¡BIENVENIDO A WISE!', text: 'Tu sistema de gestión de rentabilidad. En menos de un minuto te mostramos las planillas principales para que arranques con todo. Usá las flechas para avanzar o retroceder.' },
+    { icon: 'donut_small', title: 'PERFORMANCE', text: 'El tablero de control: acá ves el CTR (capital total restante), la rentabilidad del mes (RNA), ingresos, gastos reales y el estado de tu stock. Es la foto financiera de tu negocio.' },
+    { icon: 'point_of_sale', title: 'VENTAS', text: 'Registrá cada venta eligiendo cliente y productos. Solo vas a poder elegir artículos que tengan stock disponible, y el stock se descuenta automáticamente.' },
+    { icon: 'receipt_long', title: 'GASTOS', text: 'Cargá todas tus compras y gastos por proveedor y categoría. Los gastos de INSUMOS alimentan el ALMACÉN y los costos de tus artículos.' },
+    { icon: 'conveyor_belt', title: 'INGRESOS', text: 'Cuando producís, lo registrás acá: cada producción suma unidades al stock disponible para vender.' },
+    { icon: 'contacts', title: 'CLIENTES Y PROVEEDORES', text: 'Tu directorio: clientes para asociar a las ventas, y proveedores para asociar a los gastos. A los proveedores de compra/venta les podés comprar artículos para revender.' },
+    { icon: 'inventory_2', title: 'ARTÍCULOS', text: 'El corazón del sistema: creá artículos COMPUESTOS (los fabricás con insumos y receta) o SIMPLES (los comprás y revendés). Los simples pueden subcategorizarse con variables como color o talle.' },
+    { icon: 'warehouse', title: 'ALMACÉN', text: 'El stock de tus insumos: cuánto compraste, cuánto consumiste según la producción y cuánto te queda.' },
+    { icon: 'tune', title: 'TABS DE CADA PLANILLA', text: 'Arriba de cada planilla tenés 3 pestañas: FUNCIONES (el uso diario), PARAMETRIZACIÓN (activar campos y opciones) y MIGRAR DATOS (exportar e importar planillas).' },
+    { icon: 'support_agent', title: '¿DUDAS? ESTAMOS ACÁ', text: 'En la esquina inferior derecha tenés el globo de ayuda: desde ahí podés contactar a soporte por WhatsApp o volver a ver este tutorial cuando quieras. ¡Éxitos!' },
+];
+
+let _tutoIdx = 0, _tutoTimer = null;
+function startTutorial(force = false) {
+    const ov = document.getElementById('tuto-overlay');
+    if (!ov) return;
+    _tutoIdx = 0;
+    ov.style.display = 'flex';
+    ov.innerHTML = `
+        <div class="tuto-card">
+            <div class="tuto-icon"><span class="material-symbols-outlined" id="tuto-icon-sym">waving_hand</span></div>
+            <h3 id="tuto-title"></h3>
+            <p id="tuto-text"></p>
+            <div class="tuto-dots" id="tuto-dots"></div>
+            <div class="tuto-controls">
+                <button class="tuto-skip" id="tuto-skip">SALTEAR TUTORIAL</button>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn secondary outline btn-icon" id="tuto-prev" title="Anterior"><span class="material-symbols-outlined">arrow_back</span></button>
+                    <button class="btn primary btn-icon" id="tuto-next" title="Siguiente"><span class="material-symbols-outlined">arrow_forward</span></button>
+                </div>
+            </div>
+        </div>`;
+    ov.querySelector('#tuto-skip').addEventListener('click', closeTutorial);
+    ov.querySelector('#tuto-prev').addEventListener('click', () => { if (_tutoIdx > 0) showTutoStep(_tutoIdx - 1); });
+    ov.querySelector('#tuto-next').addEventListener('click', () => {
+        if (_tutoIdx < TUTO_STEPS.length - 1) showTutoStep(_tutoIdx + 1);
+        else closeTutorial();
+    });
+    showTutoStep(0);
+}
+
+function showTutoStep(i) {
+    _tutoIdx = i;
+    const step = TUTO_STEPS[i];
+    const card = document.querySelector('#tuto-overlay .tuto-card');
+    if (!card) return;
+    // Reinicia la animación de entrada de la tarjeta
+    card.classList.remove('tuto-pop'); void card.offsetWidth; card.classList.add('tuto-pop');
+    document.getElementById('tuto-icon-sym').textContent = step.icon;
+    document.getElementById('tuto-title').textContent = step.title;
+    document.getElementById('tuto-dots').innerHTML = TUTO_STEPS.map((_, d) => `<span class="tuto-dot ${d === i ? 'on' : ''}"></span>`).join('');
+    document.getElementById('tuto-prev').style.visibility = i === 0 ? 'hidden' : 'visible';
+    const nextBtn = document.getElementById('tuto-next');
+    nextBtn.innerHTML = i === TUTO_STEPS.length - 1
+        ? '<span class="material-symbols-outlined">rocket_launch</span>'
+        : '<span class="material-symbols-outlined">arrow_forward</span>';
+    nextBtn.title = i === TUTO_STEPS.length - 1 ? '¡Empezar a usar WISE!' : 'Siguiente';
+    // Efecto máquina de escribir
+    const txtEl = document.getElementById('tuto-text');
+    if (_tutoTimer) clearInterval(_tutoTimer);
+    txtEl.textContent = ''; txtEl.classList.add('typing');
+    let c = 0;
+    _tutoTimer = setInterval(() => {
+        c += 2;
+        txtEl.textContent = step.text.slice(0, c);
+        if (c >= step.text.length) { clearInterval(_tutoTimer); _tutoTimer = null; txtEl.classList.remove('typing'); }
+    }, 14);
+}
+
+function closeTutorial() {
+    if (_tutoTimer) { clearInterval(_tutoTimer); _tutoTimer = null; }
+    const ov = document.getElementById('tuto-overlay');
+    if (ov) {
+        ov.classList.add('tuto-fade-out');
+        setTimeout(() => { ov.style.display = 'none'; ov.classList.remove('tuto-fade-out'); ov.innerHTML = ''; }, 350);
+    }
+    if (currentUser && currentUser.username) localStorage.setItem('wise_tuto_seen_' + currentUser.username, '1');
+}
 

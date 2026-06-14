@@ -572,3 +572,78 @@ input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 2px 
 /* Excepciones: animaciones no deben heredar la transición */
 .animate-spin, .skeleton-bar, .bar-fill, .btn { transition: none; }
 .btn { transition: background 0.2s ease, transform 0.1s ease, color 0.2s ease, border-color 0.2s ease; }
+
+/* ═══ Permisos por rol personalizado ═══ */
+.section.perm-no-reg > .tab-panel[data-tab="funciones"] > .card:not(.mt-4) { display: none; }
+.section.perm-no-hist > .tab-panel[data-tab="funciones"] > .card.mt-4 { display: none; }
+#sec-almacen.perm-no-hist > .tab-panel[data-tab="funciones"] > .card { display: none; }
+body.perm-no-ver .section.active tbody [onclick*="view" i] { display: none !important; }
+body.perm-no-edit #modal-body [onclick*="edit" i] { display: none !important; }
+body.perm-no-del #modal-body [onclick*="delete" i] { display: none !important; }
+
+/* ═══ Subcategorización: grilla de combinaciones ═══ */
+.subcat-matrix-table th, .subcat-matrix-table td { padding: 8px 12px; }
+.subcat-matrix-table thead th:first-child { color: var(--text-muted); font-size: 0.75rem; }
+
+/* ═══ Globo de ayuda / soporte ═══ */
+#help-bubble {
+    position: fixed; bottom: 22px; right: 22px; z-index: 1200;
+    width: 54px; height: 54px; border-radius: 50%;
+    background: var(--primary); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; box-shadow: 0 8px 24px rgba(37, 99, 235, 0.45);
+    animation: help-float 3s ease-in-out infinite;
+}
+#help-bubble:hover { transform: scale(1.08); animation-play-state: paused; }
+#help-bubble .material-symbols-outlined { font-size: 1.7rem; }
+@keyframes help-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+#help-panel {
+    position: fixed; bottom: 88px; right: 22px; z-index: 1200;
+    width: 290px; background: var(--surface); border: 1px solid var(--surface-border);
+    border-radius: 14px; padding: 18px 20px; box-shadow: 0 20px 45px rgba(0,0,0,0.4);
+    opacity: 0; transform: translateY(12px) scale(0.96); pointer-events: none;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+}
+#help-panel.open { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
+#help-panel .help-wsp {
+    display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+    border-radius: 10px; background: rgba(34, 197, 94, 0.12); color: #22c55e;
+    font-weight: 700; text-decoration: none; font-size: 0.9rem;
+}
+#help-panel .help-wsp:hover { background: rgba(34, 197, 94, 0.22); }
+
+/* ═══ Tutorial de primer ingreso ═══ */
+#tuto-overlay {
+    position: fixed; inset: 0; z-index: 1500;
+    background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(6px);
+    display: flex; align-items: center; justify-content: center;
+    animation: tuto-fade-in 0.35s ease;
+}
+#tuto-overlay.tuto-fade-out { opacity: 0; transition: opacity 0.35s ease; }
+@keyframes tuto-fade-in { from { opacity: 0; } to { opacity: 1; } }
+.tuto-card {
+    width: 92%; max-width: 480px; background: var(--surface);
+    border: 1px solid var(--surface-border); border-radius: 20px;
+    padding: 34px 32px 24px; text-align: center;
+    box-shadow: 0 30px 60px rgba(0,0,0,0.5);
+}
+.tuto-card.tuto-pop { animation: tuto-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1); }
+@keyframes tuto-pop { 0% { transform: scale(0.85) translateY(14px); opacity: 0; } 100% { transform: scale(1) translateY(0); opacity: 1; } }
+.tuto-icon {
+    width: 76px; height: 76px; margin: 0 auto 16px; border-radius: 50%;
+    background: var(--primary-light);
+    display: flex; align-items: center; justify-content: center;
+    animation: tuto-icon-bounce 2.2s ease-in-out infinite;
+}
+.tuto-icon .material-symbols-outlined { font-size: 2.4rem; color: var(--primary); }
+@keyframes tuto-icon-bounce { 0%, 100% { transform: translateY(0) rotate(0deg); } 30% { transform: translateY(-7px) rotate(-4deg); } 60% { transform: translateY(0) rotate(3deg); } }
+.tuto-card h3 { margin: 0 0 12px; font-size: 1.25rem; letter-spacing: 1px; }
+.tuto-card p { min-height: 92px; color: var(--text-muted); font-size: 0.92rem; line-height: 1.55; margin: 0 0 16px; }
+.tuto-card p.typing::after { content: '▍'; color: var(--primary); animation: tuto-caret 0.8s steps(2) infinite; }
+@keyframes tuto-caret { 50% { opacity: 0; } }
+.tuto-dots { display: flex; gap: 7px; justify-content: center; margin-bottom: 18px; }
+.tuto-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--surface-border); transition: all 0.25s ease; }
+.tuto-dot.on { background: var(--primary); width: 22px; border-radius: 5px; }
+.tuto-controls { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--surface-border); padding-top: 14px; }
+.tuto-skip { background: transparent; border: none; color: var(--text-muted); font-size: 0.78rem; cursor: pointer; text-decoration: underline; letter-spacing: 0.5px; }
+.tuto-skip:hover { color: var(--text-main); }

@@ -199,6 +199,7 @@ class ProductModel(BaseModel):
     yield_per_batch: float = 1
     min_stock: Optional[int] = 0
     article_type: Optional[str] = 'FORMULA'
+    subcat_group: Optional[str] = None
 
 class RecipeItem(BaseModel):
     ingredient_id: int
@@ -883,10 +884,10 @@ def get_products(user: dict = Depends(get_current_user)):
     tenant_id = get_tenant_id(user)
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, flavor_name, sale_price, current_gpu, yield_per_batch, min_stock, article_type FROM products WHERE tenant_id = %s", (tenant_id,))
+    cursor.execute("SELECT id, flavor_name, sale_price, current_gpu, yield_per_batch, min_stock, article_type, subcat_group FROM products WHERE tenant_id = %s", (tenant_id,))
     results = cursor.fetchall()
     conn.close()
-    return [{"id": r[0], "name": r[1], "price": r[2], "gpu": r[3], "yield": r[4], "min_stock": r[5] or 0, "article_type": r[6] or 'FORMULA'} for r in results]
+    return [{"id": r[0], "name": r[1], "price": r[2], "gpu": r[3], "yield": r[4], "min_stock": r[5] or 0, "article_type": r[6] or 'FORMULA', "subcat_group": r[7]} for r in results]
 
 
 @app.post("/products")
@@ -896,9 +897,9 @@ def add_product(req: ProductModel, user: dict = Depends(get_current_user)):
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            INSERT INTO products (flavor_name, sale_price, yield_per_batch, min_stock, article_type, tenant_id)
-            VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
-        """, (req.flavor_name, req.sale_price, req.yield_per_batch, req.min_stock or 0, req.article_type or 'FORMULA', tenant_id))
+            INSERT INTO products (flavor_name, sale_price, yield_per_batch, min_stock, article_type, subcat_group, tenant_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
+        """, (req.flavor_name, req.sale_price, req.yield_per_batch, req.min_stock or 0, req.article_type or 'FORMULA', req.subcat_group, tenant_id))
         new_id = cursor.fetchone()[0]
         conn.commit()
         return {"success": True, "id": new_id}
@@ -943,9 +944,9 @@ def update_product(product_id: int, req: ProductModel, user: dict = Depends(get_
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            UPDATE products SET flavor_name = %s, sale_price = %s, yield_per_batch = %s, min_stock = %s, article_type = %s
+            UPDATE products SET flavor_name = %s, sale_price = %s, yield_per_batch = %s, min_stock = %s, article_type = %s, subcat_group = %s
             WHERE id = %s AND tenant_id = %s
-        """, (req.flavor_name, req.sale_price, req.yield_per_batch, req.min_stock or 0, req.article_type or 'FORMULA', product_id, tenant_id))
+        """, (req.flavor_name, req.sale_price, req.yield_per_batch, req.min_stock or 0, req.article_type or 'FORMULA', req.subcat_group, product_id, tenant_id))
         conn.commit()
         return {"success": True}
     except Exception as e:
